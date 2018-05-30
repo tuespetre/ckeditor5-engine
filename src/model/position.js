@@ -41,8 +41,10 @@ export default class Position {
 	 *
 	 * @param {module:engine/model/element~Element|module:engine/model/documentfragment~DocumentFragment} root Root of the position.
 	 * @param {Array.<Number>} path Position path. See {@link module:engine/model/position~Position#path}.
+	 * @param {module:engine/model/position~PositionStickiness} stickiness Position stickiness. Defaults to `'toNone'`.
+	 * See {@link module:engine/model/position~PositionStickiness}.
 	 */
-	constructor( root, path ) {
+	constructor( root, path, stickiness = 'toNone' ) {
 		if ( !root.is( 'element' ) && !root.is( 'documentFragment' ) ) {
 			/**
 			 * Position root is invalid.
@@ -108,6 +110,17 @@ export default class Position {
 		 * @member {Array.<Number>} module:engine/model/position~Position#path
 		 */
 		this.path = path;
+
+		/**
+		 * Position stickiness. See {@link module:engine/model/position~PositionStickiness}.
+		 *
+		 * Regular `Position` (not {@link module:engine/model/liveposition~LivePosition}) should always be not-sticky
+		 * (`'toNone'`), unless it is a {@link module:engine/model/range~Range} boundary. Note, that `Range`
+		 * automatically creates positions with correct stickiness.
+		 *
+		 * @member {module:engine/model/position~PositionStickiness} module:engine/model/position~Position#stickiness
+		 */
+		this.stickiness = stickiness;
 	}
 
 	/**
@@ -469,6 +482,96 @@ export default class Position {
 		}
 	}
 
+	getTransformedByOperation( operation ) {
+		let result;
+
+		switch ( operation.type ) {
+			case 'insert':
+				result = this._getTransformedByInsertOperation( operation );
+				break;
+			case 'move':
+			case 'remove':
+			case 'reinsert':
+				result = this._getTransformedByMoveOperation( operation );
+				break;
+			case 'split':
+				result = this._getTransformedBySplitOperation( operation );
+				break;
+			case 'merge':
+				result = this._getTransformedByMergeOperation( operation );
+				break;
+			case 'wrap':
+				result = this._getTransformedByWrapOperation( operation );
+				break;
+			case 'unwrap':
+				result = this._getTransformedByUnwrapOperation( operation );
+				break;
+		}
+
+		return result;
+	}
+
+	_getTransformedByInsertOperation( operation ) {
+		return this._getTransformedByInsertion( operation.position, operation.howMany );
+	}
+
+	_getTransformedByMoveOperation( operation ) {
+		return this._getTransformedByMove( operation.sourcePosition, operation.targetPosition, operation.howMany );
+	}
+
+	_getTransformedBySplitOperation( operation ) {
+		const movedRange = operation.movedRange;
+
+		const isContained = movedRange.containsPosition( this ) ||
+			( movedRange.start.isEqual( this ) && this.stickiness == 'toNext' );
+
+		if ( isContained ) {
+			return this._getCombined( operation.position, operation.moveTargetPosition );
+		} else {
+			return this._getTransformedByInsertion( operation.insertionPosition, 1 );
+		}
+	}
+
+	_getTransformedByMergeOperation( operation ) {
+		const movedRange = operation.movedRange;
+
+		const isContained = movedRange.containsPosition( this ) || movedRange.start.isEqual( this );
+
+		if ( isContained ) {
+			return this._getCombined( operation.sourcePosition, operation.targetPosition );
+		} else {
+			return this._getTransformedByDeletion( operation.deletionPosition, 1 );
+		}
+	}
+
+	_getTransformedByWrapOperation( operation ) {
+		const wrappedRange = operation.wrappedRange;
+
+		const isContained = wrappedRange.containsPosition( this ) ||
+			( wrappedRange.start.isEqual( this ) && this.stickiness == 'toNext' ) ||
+			( wrappedRange.end.isEqual( this ) && this.stickiness == 'toPrevious' );
+
+		if ( isContained ) {
+			return this._getCombined( wrappedRange.start, operation.targetPosition );
+		} else {
+			return this._getTransformedByDeletion( operation.position, operation.howMany - 1 );
+		}
+	}
+
+	_getTransformedByUnwrapOperation( operation ) {
+		const unwrappedRange = operation.unwrappedRange;
+
+		const isContained = unwrappedRange.containsPosition( this ) ||
+			unwrappedRange.start.isEqual( this ) ||
+			unwrappedRange.end.isEqual( this );
+
+		if ( isContained ) {
+			return this._getCombined( operation.moveSourcePosition, operation.position );
+		} else {
+			return this._getTransformedByInsertion( operation.position, operation.howMany - 1 );
+		}
+	}
+
 	/**
 	 * Returns a copy of this position that is updated by removing `howMany` nodes starting from `deletePosition`.
 	 * It may happen that this position is in a removed node. If that is the case, `null` is returned instead.
@@ -524,12 +627,9 @@ export default class Position {
 	 * @protected
 	 * @param {module:engine/model/position~Position} insertPosition Position where nodes are inserted.
 	 * @param {Number} howMany How many nodes are inserted.
-	 * @param {Boolean} insertBefore Flag indicating whether nodes are inserted before or after `insertPosition`.
-	 * This is important only when `insertPosition` and this position are same. If that is the case and the flag is
-	 * set to `true`, this position will get transformed. If the flag is set to `false`, it won't.
 	 * @returns {module:engine/model/position~Position} Transformed position.
 	 */
-	_getTransformedByInsertion( insertPosition, howMany, insertBefore ) {
+	_getTransformedByInsertion( insertPosition, howMany ) {
 		const transformed = Position.createFromPosition( this );
 
 		// This position can't be affected if insertion was in a different root.
@@ -539,7 +639,7 @@ export default class Position {
 
 		if ( compareArrays( insertPosition.getParentPath(), this.getParentPath() ) == 'same' ) {
 			// If nodes are inserted in the node that is pointed by this position...
-			if ( insertPosition.offset < this.offset || ( insertPosition.offset == this.offset && insertBefore ) ) {
+			if ( insertPosition.offset < this.offset || ( insertPosition.offset == this.offset && this.stickiness == 'toNext' ) ) {
 				// And are inserted before an offset of that position...
 				// "Push" this positions offset.
 				transformed.offset += howMany;
@@ -565,28 +665,23 @@ export default class Position {
 	 * @param {module:engine/model/position~Position} sourcePosition Position before the first element to move.
 	 * @param {module:engine/model/position~Position} targetPosition Position where moved elements will be inserted.
 	 * @param {Number} howMany How many consecutive nodes to move, starting from `sourcePosition`.
-	 * @param {Boolean} insertBefore Flag indicating whether moved nodes are pasted before or after `insertPosition`.
-	 * This is important only when `targetPosition` and this position are same. If that is the case and the flag is
-	 * set to `true`, this position will get transformed by range insertion. If the flag is set to `false`, it won't.
-	 * @param {Boolean} [sticky] Flag indicating whether this position "sticks" to range, that is if it should be moved
-	 * with the moved range if it is equal to one of range's boundaries.
 	 * @returns {module:engine/model/position~Position} Transformed position.
 	 */
-	_getTransformedByMove( sourcePosition, targetPosition, howMany, insertBefore, sticky ) {
+	_getTransformedByMove( sourcePosition, targetPosition, howMany ) {
 		// Moving a range removes nodes from their original position. We acknowledge this by proper transformation.
 		let transformed = this._getTransformedByDeletion( sourcePosition, howMany );
 
 		// Then we update target position, as it could be affected by nodes removal too.
 		targetPosition = targetPosition._getTransformedByDeletion( sourcePosition, howMany );
 
-		if ( transformed === null || ( sticky && transformed.isEqual( sourcePosition ) ) ) {
+		if ( transformed === null || ( this.stickiness != 'toNone' && transformed.isEqual( sourcePosition ) ) ) {
 			// This position is inside moved range (or sticks to it).
 			// In this case, we calculate a combination of this position, move source position and target position.
 			transformed = this._getCombined( sourcePosition, targetPosition );
 		} else {
 			// This position is not inside a removed range.
 			// In next step, we simply reflect inserting `howMany` nodes, which might further affect the position.
-			transformed = transformed._getTransformedByInsertion( targetPosition, howMany, insertBefore );
+			transformed = transformed._getTransformedByInsertion( targetPosition, howMany );
 		}
 
 		return transformed;
@@ -754,6 +849,7 @@ export default class Position {
 	 * Creates a `Position` instance from given plain object (i.e. parsed JSON string).
 	 *
 	 * @param {Object} json Plain object to be converted to `Position`.
+	 * @param {module:engine/model/document~Document} doc Document object that will be position owner.
 	 * @returns {module:engine/model/position~Position} `Position` instance created using given plain object.
 	 */
 	static fromJSON( json, doc ) {
@@ -783,4 +879,31 @@ export default class Position {
  * If positions are in different roots `'different'` flag is returned.
  *
  * @typedef {String} module:engine/model/position~PositionRelation
+ */
+
+/**
+ * Represents how position is "sticking" with neighbour nodes. Used to define how position should be transformed (moved)
+ * in edge cases. Possible values: `'toNone'`, `'toNext'`, `'toPrevious'`.
+ *
+ * Examples:
+ *
+ *		Insert. Position is at | and nodes are inserted at the same position, marked as ^:
+ *
+ *		- sticks to none:           <p>f^|oo</p>  ->  <p>fbar|oo</p>
+ *		- sticks to next node:      <p>f^|oo</p>  ->  <p>fbar|oo</p>
+ *		- sticks to previous node:  <p>f|^oo</p>  ->  <p>f|baroo</p>
+ *
+ *
+ *		Move. Position is at | and range [oo] is moved to position ^:
+ *
+ *		- sticks to none:           <p>f|[oo]</p><p>b^ar</p>  ->  <p>f|</p><p>booar</p>
+ *		- sticks to none:           <p>f[oo]|</p><p>b^ar</p>  ->  <p>f|</p><p>booar</p>
+ *
+ *		- sticks to next node:      <p>f|[oo]</p><p>b^ar</p>  ->  <p>f</p><p>b|ooar</p>
+ *		- sticks to next node:      <p>f[oo]|</p><p>b^ar</p>  ->  <p>f|</p><p>booar</p>
+ *
+ *		- sticks to previous node:  <p>f|[oo]</p><p>b^ar</p>  ->  <p>f|</p><p>booar</p>
+ *		- sticks to previous node:  <p>f[oo]|</p><p>b^ar</p>  ->  <p>f</p><p>boo|ar</p>
+ *
+ * @typedef {String} module:engine/model/position~PositionStickiness
  */

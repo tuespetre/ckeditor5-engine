@@ -256,7 +256,7 @@ describe( 'LivePosition', () => {
 			} );
 
 			it( 'is at the same position and live position is sticking to left side', () => {
-				const newLive = new LivePosition( root, path, 'sticksToPrevious' );
+				const newLive = new LivePosition( root, path, 'toPrevious' );
 				spy = sinon.spy();
 				newLive.on( 'change', spy );
 
@@ -304,7 +304,7 @@ describe( 'LivePosition', () => {
 			} );
 
 			it( 'is at the same position and live position is sticking to left side', () => {
-				const newLive = new LivePosition( root, path, 'sticksToPrevious' );
+				const newLive = new LivePosition( root, path, 'toPrevious' );
 				spy = sinon.spy();
 				newLive.on( 'change', spy );
 

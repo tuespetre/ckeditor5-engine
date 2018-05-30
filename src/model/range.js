@@ -10,6 +10,7 @@
 import Position from './position';
 import TreeWalker from './treewalker';
 import CKEditorError from '@ckeditor/ckeditor5-utils/src/ckeditorerror';
+import compareArrays from '@ckeditor/ckeditor5-utils/src/comparearrays';
 
 /**
  * Range class. Range is iterable.
@@ -31,6 +32,7 @@ export default class Range {
 		 * @member {module:engine/model/position~Position}
 		 */
 		this.start = Position.createFromPosition( start );
+		this.start.stickiness = 'toNext';
 
 		/**
 		 * End position.
@@ -39,6 +41,7 @@ export default class Range {
 		 * @member {module:engine/model/position~Position}
 		 */
 		this.end = end ? Position.createFromPosition( end ) : Position.createFromPosition( start );
+		this.end.stickiness = this.isCollapsed ? 'toNext' : 'toPrevious';
 	}
 
 	/**
@@ -76,7 +79,10 @@ export default class Range {
 	 * @type {Boolean}
 	 */
 	get isFlat() {
-		return this.start.parent === this.end.parent;
+		const startParentPath = this.start.getParentPath();
+		const endParentPath = this.end.getParentPath();
+
+		return compareArrays( startParentPath, endParentPath ) == 'same';
 	}
 
 	/**
@@ -393,35 +399,36 @@ export default class Range {
 	getTransformedByDelta( delta ) {
 		const ranges = [ Range.createFromRange( this ) ];
 
-		// Operation types that a range can be transformed by.
-		const supportedTypes = new Set( [ 'insert', 'move', 'remove', 'reinsert' ] );
-
 		for ( const operation of delta.operations ) {
-			if ( supportedTypes.has( operation.type ) ) {
-				for ( let i = 0; i < ranges.length; i++ ) {
-					let result;
+			for ( let i = 0; i < ranges.length; i++ ) {
+				let result;
 
-					if ( operation.type == 'insert' ) {
-						result = ranges[ i ]._getTransformedByDocumentChange(
-							operation.type,
-							delta.type,
-							operation.position,
-							operation.nodes.maxOffset
-						);
-					} else {
-						result = ranges[ i ]._getTransformedByDocumentChange(
-							operation.type,
-							delta.type,
-							operation.targetPosition,
-							operation.howMany,
-							operation.sourcePosition
-						);
-					}
-
-					ranges.splice( i, 1, ...result );
-
-					i += result.length - 1;
+				switch ( operation.type ) {
+					case 'insert':
+						result = ranges[ i ]._getTransformedByInsertOperation( operation );
+						break;
+					case 'move':
+					case 'remove':
+					case 'reinsert':
+						result = ranges[ i ]._getTransformedByMoveOperation( operation, true );
+						break;
+					case 'split':
+						result = ranges[ i ]._getTransformedBySplitOperation( operation );
+						break;
+					case 'merge':
+						result = ranges[ i ]._getTransformedByMergeOperation( operation );
+						break;
+					case 'wrap':
+						result = ranges[ i ]._getTransformedByWrapOperation( operation );
+						break;
+					case 'unwrap':
+						result = ranges[ i ]._getTransformedByUnwrapOperation( operation );
+						break;
 				}
+
+				ranges.splice( i, 1, ...result );
+
+				i += result.length - 1;
 			}
 		}
 
@@ -479,59 +486,27 @@ export default class Range {
 		return this.start.getCommonAncestor( this.end );
 	}
 
+
+	_getTransformedByInsertOperation( operation, spread = false ) {
+		return this._getTransformedByInsertion( operation.position, operation.howMany, spread );
+	}
+
 	/**
-	 * Returns a range that is a result of transforming this range by a change in the model document.
-	 *
 	 * @protected
-	 * @param {'insert'|'move'|'remove'|'reinsert'} type Change type.
-	 * @param {String} deltaType Type of delta that introduced the change.
-	 * @param {module:engine/model/position~Position} targetPosition Position before the first changed node.
-	 * @param {Number} howMany How many nodes has been changed.
-	 * @param {module:engine/model/position~Position} sourcePosition Source position of changes.
 	 * @returns {Array.<module:engine/model/range~Range>}
 	 */
-	_getTransformedByDocumentChange( type, deltaType, targetPosition, howMany, sourcePosition ) {
-		if ( type == 'insert' ) {
-			return this._getTransformedByInsertion( targetPosition, howMany, false, false );
-		} else {
+	_getTransformedByMoveOperation( operation, expandIfPossible = false ) {
+		const sourcePosition = operation.sourcePosition;
+		const howMany = operation.howMany;
+		const targetPosition = operation.targetPosition;
+
+		if ( expandIfPossible ) {
 			const sourceRange = Range.createFromPositionAndShift( sourcePosition, howMany );
 
-			// Edge case for merge delta.
-			if (
-				deltaType == 'merge' &&
-				this.isCollapsed &&
-				( this.start.isEqual( sourceRange.start ) || this.start.isEqual( sourceRange.end ) )
-			) {
-				// Collapsed range is in merged element, at the beginning or at the end of it.
-				// Without fix, the range would end up in the graveyard, together with removed element.
-				// <p>foo</p><p>[]bar</p> -> <p>foobar</p><p>[]</p> -> <p>foobar</p> -> <p>foo[]bar</p>
-				// <p>foo</p><p>bar[]</p> -> <p>foobar</p><p>[]</p> -> <p>foobar</p> -> <p>foobar[]</p>
-				//
-				// In most cases, `sourceRange.start.offset` for merge delta's move operation would be 0,
-				// so this formula might look overcomplicated.
-				// However in some scenarios, after operational transformation, move operation might not
-				// in fact start from 0 and we need to properly count new offset.
-				// https://github.com/ckeditor/ckeditor5-engine/pull/1133#issuecomment-329080668.
-				const offset = this.start.offset - sourceRange.start.offset;
-
-				return [ new Range( targetPosition.getShiftedBy( offset ) ) ];
-			}
-			//
-			// Edge case for split delta.
-			//
-			if ( deltaType == 'split' && this.isCollapsed && this.end.isEqual( sourceRange.end ) ) {
-				// Collapsed range is at the end of split element.
-				// Without fix, the range would end up at the end of split (old) element instead of at the end of new element.
-				// That would happen because this range is not technically inside moved range. Last step below shows the fix.
-				// <p>foobar[]</p> -> <p>foobar[]</p><p></p> -> <p>foo[]</p><p>bar</p> -> <p>foo</p><p>bar[]</p>
-				return [ new Range( targetPosition.getShiftedBy( howMany ) ) ];
-			}
-			//
-			// Other edge cases:
-			//
-			// In all examples `[]` is `this` and `{}` is `sourceRange`, while `^` is move target position.
+			// In the example `[]` is `this` and `{}` is `sourceRange`, while `^` is move target position.
 			//
 			// Example:
+			//
 			// <p>xx</p>^<w>{<p>a[b</p>}</w><p>c]d</p>   -->   <p>xx</p><p>a[b</p><w></w><p>c]d</p>
 			// ^<p>xx</p><w>{<p>a[b</p>}</w><p>c]d</p>   -->   <p>a[b</p><p>xx</p><w></w><p>c]d</p>  // Note <p>xx</p> inclusion.
 			// <w>{<p>a[b</p>}</w>^<p>c]d</p>            -->   <w></w><p>a[b</p><p>c]d</p>
@@ -540,16 +515,16 @@ export default class Range {
 				this.containsPosition( sourceRange.end ) &&
 				this.end.isAfter( targetPosition )
 			) {
-				const start = this.start._getCombined(
-					sourcePosition,
-					targetPosition._getTransformedByDeletion( sourcePosition, howMany )
-				);
+				const start = this.start._getCombined( sourcePosition, targetPosition._getTransformedByDeletion( sourcePosition, howMany ) );
 				const end = this.end._getTransformedByMove( sourcePosition, targetPosition, howMany, false, false );
 
 				return [ new Range( start, end ) ];
 			}
 
+			// In the example `[]` is `this` and `{}` is `sourceRange`, while `^` is move target position.
+			//
 			// Example:
+			//
 			// <p>c[d</p><w>{<p>a]b</p>}</w>^<p>xx</p>   -->   <p>c[d</p><w></w><p>a]b</p><p>xx</p>
 			// <p>c[d</p><w>{<p>a]b</p>}</w><p>xx</p>^   -->   <p>c[d</p><w></w><p>xx</p><p>a]b</p>  // Note <p>xx</p> inclusion.
 			// <p>c[d</p>^<w>{<p>a]b</p>}</w>            -->   <p>c[d</p><p>a]b</p><w></w>
@@ -558,23 +533,51 @@ export default class Range {
 				this.containsPosition( sourceRange.start ) &&
 				this.start.isBefore( targetPosition )
 			) {
-				const start = this.start._getTransformedByMove(
-					sourcePosition,
-					targetPosition,
-					howMany,
-					true,
-					false
-				);
-				const end = this.end._getCombined(
-					sourcePosition,
-					targetPosition._getTransformedByDeletion( sourcePosition, howMany )
-				);
+				const start = this.start._getTransformedByMove( sourcePosition, targetPosition, howMany, true, false );
+				const end = this.end._getCombined( sourcePosition, targetPosition._getTransformedByDeletion( sourcePosition, howMany ) );
 
 				return [ new Range( start, end ) ];
 			}
-
-			return this._getTransformedByMove( sourcePosition, targetPosition, howMany );
 		}
+
+		return this._getTransformedByMove( sourcePosition, targetPosition, howMany );
+	}
+
+	_getTransformedBySplitOperation( operation ) {
+		const start = this.start._getTransformedBySplitOperation( operation );
+		const end = this.start._getTransformedBySplitOperation( operation );
+
+		return new Range( start, end );
+	}
+
+	_getTransformedByMergeOperation( operation ) {
+		const start = this.start._getTransformedByMergeOperation( operation );
+		const end = this.start._getTransformedByMergeOperation( operation );
+
+		if ( start.isAfter( end ) ) {
+			// This happens in the following case:
+			//
+			// <p>abc</p>{<p>x}yz</p> -> <p>abcx}yz</p>{
+			//                           <p>abcx{yz</p>}
+			//
+			return new Range( end, start );
+		}
+
+		return new Range( start, end );
+	}
+
+	_getTransformedByWrapOperation( operation ) {
+		const start = this.start._getTransformedByWrapOperation( operation );
+		const end = this.start._getTransformedByWrapOperation( operation );
+
+		return new Range( start, end );
+	}
+
+	_getTransformedByUnwrapOperation( operation ) {
+		const start = this.start._getTransformedByUnwrapOperation( operation );
+		const end = this.start._getTransformedByUnwrapOperation( operation );
+
+		return new Range( start, end );
 	}
 
 	/**
@@ -597,22 +600,14 @@ export default class Range {
 	 *		transformed = range._getTransformedByInsertion( new Position( root, [ 3, 2 ] ), 4, true );
 	 *		// transformed array has two ranges: from [ 2, 7 ] to [ 3, 2 ] and from [ 3, 6 ] to [ 4, 0, 1 ]
 	 *
-	 *		transformed = range._getTransformedByInsertion( new Position( root, [ 4, 0, 1 ] ), 4, false, false );
-	 *		// transformed array has one range which is equal to original range because insertion is after the range boundary
-	 *
-	 *		transformed = range._getTransformedByInsertion( new Position( root, [ 4, 0, 1 ] ), 4, false, true );
-	 *		// transformed array has one range: from [ 2, 7 ] to [ 4, 0, 5 ] because range was expanded
-	 *
 	 * @protected
 	 * @param {module:engine/model/position~Position} insertPosition Position where nodes are inserted.
 	 * @param {Number} howMany How many nodes are inserted.
 	 * @param {Boolean} [spread] Flag indicating whether this {~Range range} should be spread if insertion
 	 * was inside the range. Defaults to `false`.
-	 * @param {Boolean} [isSticky] Flag indicating whether insertion should expand a range if it is in a place of
-	 * range boundary. Defaults to `false`.
 	 * @returns {Array.<module:engine/model/range~Range>} Result of the transformation.
 	 */
-	_getTransformedByInsertion( insertPosition, howMany, spread = false, isSticky = false ) {
+	_getTransformedByInsertion( insertPosition, howMany, spread = false ) {
 		if ( spread && this.containsPosition( insertPosition ) ) {
 			// Range has to be spread. The first part is from original start to the spread point.
 			// The other part is from spread point to the original end, but transformed by
@@ -621,18 +616,15 @@ export default class Range {
 			return [
 				new Range( this.start, insertPosition ),
 				new Range(
-					insertPosition._getTransformedByInsertion( insertPosition, howMany, true ),
-					this.end._getTransformedByInsertion( insertPosition, howMany, this.isCollapsed )
+					insertPosition._getTransformedByInsertion( insertPosition, howMany ),
+					this.end._getTransformedByInsertion( insertPosition, howMany )
 				)
 			];
 		} else {
 			const range = Range.createFromRange( this );
 
-			const insertBeforeStart = !isSticky;
-			const insertBeforeEnd = range.isCollapsed ? true : isSticky;
-
-			range.start = range.start._getTransformedByInsertion( insertPosition, howMany, insertBeforeStart );
-			range.end = range.end._getTransformedByInsertion( insertPosition, howMany, insertBeforeEnd );
+			range.start = range.start._getTransformedByInsertion( insertPosition, howMany );
+			range.end = range.end._getTransformedByInsertion( insertPosition, howMany );
 
 			return [ range ];
 		}
@@ -650,7 +642,7 @@ export default class Range {
 	 */
 	_getTransformedByMove( sourcePosition, targetPosition, howMany ) {
 		if ( this.isCollapsed ) {
-			const newPos = this.start._getTransformedByMove( sourcePosition, targetPosition, howMany, true, false );
+			const newPos = this.start._getTransformedByMove( sourcePosition, targetPosition, howMany );
 
 			return [ new Range( newPos ) ];
 		}

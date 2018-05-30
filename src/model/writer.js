@@ -28,6 +28,10 @@ import MoveOperation from './operation/moveoperation';
 import RemoveOperation from './operation/removeoperation';
 import RenameOperation from './operation/renameoperation';
 import RootAttributeOperation from './operation/rootattributeoperation';
+import SplitOperation from './operation/splitoperation';
+import MergeOperation from './operation/mergeoperation';
+import WrapOperation from './operation/wrapoperation';
+import UnwrapOperation from './operation/unwrapoperation';
 
 import DocumentFragment from './documentfragment';
 import Text from './text';
@@ -518,13 +522,10 @@ export default class Writer {
 	 * Node before and after the position have to be an element. Otherwise `writer-merge-no-element-before` or
 	 * `writer-merge-no-element-after` error will be thrown.
 	 *
-	 * @param {module:engine/model/position~Position} position Position of merge.
+	 * @param {module:engine/model/position~Position} position Position between merged elements.
 	 */
 	merge( position ) {
 		this._assertWriterUsedCorrectly();
-
-		const delta = new MergeDelta();
-		this.batch.addDelta( delta );
 
 		const nodeBefore = position.nodeBefore;
 		const nodeAfter = position.nodeAfter;
@@ -547,23 +548,44 @@ export default class Writer {
 			throw new CKEditorError( 'writer-merge-no-element-after: Node after merge position must be an element.' );
 		}
 
-		const positionAfter = Position.createFromParentAndOffset( nodeAfter, 0 );
-		const positionBefore = Position.createFromParentAndOffset( nodeBefore, nodeBefore.maxOffset );
+		if ( !position.root.document ) {
+			this._mergeDetached( position );
+		} else {
+			this._merge( position );
+		}
+	}
 
-		const moveVersion = position.root.document ? position.root.document.version : null;
+	/**
+	 * Performs merge action in a detached tree.
+	 *
+	 * @private
+	 */
+	_mergeDetached( position ) {
+		const nodeBefore = position.nodeBefore;
+		const nodeAfter = position.nodeAfter;
 
-		const move = new MoveOperation(
-			positionAfter,
-			nodeAfter.maxOffset,
-			positionBefore,
-			moveVersion
-		);
+		this.move( Range.createIn( nodeAfter ), Position.createAt( nodeBefore, 'end' ) );
+		this.remove( nodeAfter );
+	}
 
-		move.isSticky = true;
-		delta.addOperation( move );
-		this.model.applyOperation( move );
+	/**
+	 * Performs merge action in a non-detached tree.
+	 *
+	 * @private
+	 * @param {module:engine/model/position~Position} position Position between merged elements.
+	 */
+	_merge( position ) {
+		const delta = new MergeDelta();
+		this.batch.addDelta( delta );
 
-		applyRemoveOperation( position, 1, delta, this.model );
+		const targetPosition = Position.createAt( position.nodeBefore, 'end' );
+		const sourcePosition = Position.createAt( position.nodeAfter, 0 );
+		const version = position.root.document.version;
+
+		const merge = new MergeOperation( sourcePosition, targetPosition, version );
+
+		delta.addOperation( merge );
+		this.model.applyOperation( merge );
 	}
 
 	/**
@@ -642,38 +664,20 @@ export default class Writer {
 			const delta = new SplitDelta();
 			this.batch.addDelta( delta );
 
-			const copy = new Element( splitElement.name, splitElement.getAttributes() );
-			const insertVersion = splitElement.root.document ? splitElement.root.document.version : null;
+			const version = splitElement.root.document ? splitElement.root.document.version : null;
 
-			const insert = new InsertOperation(
-				Position.createAfter( splitElement ),
-				copy,
-				insertVersion
-			);
+			const split = new SplitOperation( position, version );
 
-			delta.addOperation( insert );
-			this.model.applyOperation( insert );
-
-			const moveVersion = insertVersion !== null ? insertVersion + 1 : null;
-
-			const move = new MoveOperation(
-				position,
-				splitElement.maxOffset - position.offset,
-				Position.createFromParentAndOffset( copy, 0 ),
-				moveVersion
-			);
-			move.isSticky = true;
-
-			delta.addOperation( move );
-			this.model.applyOperation( move );
+			delta.addOperation( split );
+			this.model.applyOperation( split );
 
 			// Cache result of the first split.
 			if ( !firstSplitElement && !firstCopyElement ) {
 				firstSplitElement = splitElement;
-				firstCopyElement = copy;
+				firstCopyElement = position.parent.nodeAfter;
 			}
 
-			position = Position.createBefore( copy );
+			position = Position.createAfter( position.parent );
 			splitElement = position.parent;
 		} while ( splitElement !== limitElement );
 
@@ -727,23 +731,11 @@ export default class Writer {
 		const delta = new WrapDelta();
 		this.batch.addDelta( delta );
 
-		const insertVersion = range.root.document ? range.root.document.version : null;
+		const version = range.root.document ? range.root.document.version : null;
 
-		const insert = new InsertOperation( range.end, element, insertVersion );
-		delta.addOperation( insert );
-		this.model.applyOperation( insert );
-
-		const moveVersion = insertVersion !== null ? insertVersion + 1 : null;
-
-		const targetPosition = Position.createFromParentAndOffset( element, 0 );
-		const move = new MoveOperation(
-			range.start,
-			range.end.offset - range.start.offset,
-			targetPosition,
-			moveVersion
-		);
-		delta.addOperation( move );
-		this.model.applyOperation( move );
+		const wrap = new WrapOperation( range.start, range.end.offset - range.start.offset, element, version );
+		delta.addOperation( wrap );
+		this.model.applyOperation( wrap );
 	}
 
 	/**
@@ -764,24 +756,41 @@ export default class Writer {
 			throw new CKEditorError( 'writer-unwrap-element-no-parent: Trying to unwrap an element which has no parent.' );
 		}
 
+		if ( !element.root.document ) {
+			this._unwrapDetached( element );
+		} else {
+			this._unwrap( element );
+		}
+	}
+
+	/**
+	 * Performs unwrap action in a detached tree.
+	 *
+	 * @private
+	 * @param {module:engine/model/element~Element} element Element to unwrap.
+	 */
+	_unwrapDetached( element ) {
+		this.move( Range.createIn( element ), Position.createAfter( element ) );
+		this.remove( element );
+	}
+
+	/**
+	 * Performs unwrap action in a non-detached tree.
+	 *
+	 * @private
+	 * @param {module:engine/model/element~Element} element Element to unwrap.
+	 */
+	_unwrap( element ) {
 		const delta = new UnwrapDelta();
 		this.batch.addDelta( delta );
 
-		const sourcePosition = Position.createFromParentAndOffset( element, 0 );
-		const moveVersion = sourcePosition.root.document ? sourcePosition.root.document.version : null;
+		const position = Position.createBefore( element );
+		const version = position.root.document.version;
 
-		const move = new MoveOperation(
-			sourcePosition,
-			element.maxOffset,
-			Position.createBefore( element ),
-			moveVersion
-		);
+		const unwrap = new UnwrapOperation( position, element.maxOffset, version );
 
-		move.isSticky = true;
-		delta.addOperation( move );
-		this.model.applyOperation( move );
-
-		applyRemoveOperation( Position.createBefore( element ), 1, delta, this.model );
+		delta.addOperation( unwrap );
+		this.model.applyOperation( unwrap );
 	}
 
 	/**

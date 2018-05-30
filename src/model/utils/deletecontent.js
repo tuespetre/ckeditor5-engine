@@ -63,6 +63,7 @@ export default function deleteContent( model, selection, options = {} ) {
 		const selRange = selection.getFirstRange();
 		const startPos = selRange.start;
 		const endPos = LivePosition.createFromPosition( selRange.end );
+		endPos.stickiness = 'toNext';
 
 		// 2. Remove the content if there is any.
 		if ( !selRange.start.isTouching( selRange.end ) ) {

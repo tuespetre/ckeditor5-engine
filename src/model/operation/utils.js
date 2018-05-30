@@ -191,7 +191,7 @@ export function _normalizeNodes( nodes ) {
 		const prev = normalized[ i - 1 ];
 
 		if ( node instanceof Text && prev instanceof Text && _haveSameAttributes( node, prev ) ) {
-			// Doing this instead changing prev.data because .data is readonly.
+			// Doing this instead changing `prev.data` because `data` is readonly.
 			normalized.splice( i - 1, 2, new Text( prev.data + node.data, prev.getAttributes() ) );
 			i--;
 		}
