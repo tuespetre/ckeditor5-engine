@@ -566,9 +566,9 @@ export default class Position {
 			unwrappedRange.end.isEqual( this );
 
 		if ( isContained ) {
-			return this._getCombined( operation.moveSourcePosition, operation.position );
+			return this._getCombined( operation.position, operation.targetPosition );
 		} else {
-			return this._getTransformedByInsertion( operation.position, operation.howMany - 1 );
+			return this._getTransformedByInsertion( operation.targetPosition, operation.howMany - 1 );
 		}
 	}
 
@@ -674,6 +674,7 @@ export default class Position {
 		// Then we update target position, as it could be affected by nodes removal too.
 		targetPosition = targetPosition._getTransformedByDeletion( sourcePosition, howMany );
 
+		// 											v this is not exactly precise
 		if ( transformed === null || ( this.stickiness != 'toNone' && transformed.isEqual( sourcePosition ) ) ) {
 			// This position is inside moved range (or sticks to it).
 			// In this case, we calculate a combination of this position, move source position and target position.
@@ -854,7 +855,10 @@ export default class Position {
 	 */
 	static fromJSON( json, doc ) {
 		if ( json.root === '$graveyard' ) {
-			return new Position( doc.graveyard, json.path );
+			const pos = new Position( doc.graveyard, json.path );
+			pos.stickiness = json.stickiness;
+
+			return pos;
 		}
 
 		if ( !doc.getRoot( json.root ) ) {
@@ -870,7 +874,10 @@ export default class Position {
 			);
 		}
 
-		return new Position( doc.getRoot( json.root ), json.path );
+		const pos = new Position( doc.getRoot( json.root ), json.path );
+		pos.stickiness = json.stickiness;
+
+		return pos;
 	}
 }
 

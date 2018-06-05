@@ -191,14 +191,15 @@ export default class Differ {
 				break;
 			}
 			case 'merge': {
-				const mergedIntoElement = operation.position.parent;
+				const mergedElement = operation.sourcePosition.parent;
+				const mergedIntoElement = operation.targetPosition.parent;
 
-				if ( !this._isInInsertedElement( mergedIntoElement.parent ) ) {
-					this._markRemove( mergedIntoElement.parent, mergedIntoElement.startOffset + 1, 1 );
+				if ( !this._isInInsertedElement( mergedElement.parent ) ) {
+					this._markRemove( mergedElement.parent, mergedElement.startOffset, 1 );
 				}
 
 				if ( !this._isInInsertedElement( mergedIntoElement ) ) {
-					this._markInsert( mergedIntoElement, operation.position.offset, mergedIntoElement.nodeAfter.maxOffset );
+					this._markInsert( mergedIntoElement, operation.targetPosition.offset, mergedElement.maxOffset );
 				}
 
 				break;
@@ -212,11 +213,13 @@ export default class Differ {
 				break;
 			}
 			case 'unwrap': {
-				if ( !this._isInInsertedElement( operation.position.parent ) ) {
-					const elementToUnwrap = operation.position.nodeAfter;
+				const elementToUnwrap = operation.position.parent;
+				const offset = elementToUnwrap.startOffset;
+				const parent = elementToUnwrap.parent;
 
-					this._markRemove( operation.position.parent, operation.position.offset, 1 );
-					this._markInsert( operation.position.parent, operation.position.offset, elementToUnwrap.maxOffset );
+				if ( !this._isInInsertedElement( parent ) ) {
+					this._markRemove( parent, offset, 1 );
+					this._markInsert( parent, offset, elementToUnwrap.maxOffset );
 				}
 
 				break;

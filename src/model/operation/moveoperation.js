@@ -41,6 +41,8 @@ export default class MoveOperation extends Operation {
 		 * @member {module:engine/model/position~Position} module:engine/model/operation/moveoperation~MoveOperation#sourcePosition
 		 */
 		this.sourcePosition = Position.createFromPosition( sourcePosition );
+		this.sourcePosition.stickiness = 'toNext';
+		// maybe lets change sourcePosition + howMany to a range? flattness will be guaranteed by writer anyway
 
 		/**
 		 * Offset size of moved range.

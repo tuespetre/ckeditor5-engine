@@ -36,6 +36,7 @@ export default class SplitOperation extends Operation {
 		 * @member {module:engine/model/position~Position} module:engine/model/operation/splitoperation~SplitOperation#position
 		 */
 		this.position = Position.createFromPosition( position );
+		this.position.stickiness = 'toNext';
 	}
 
 	/**
@@ -53,7 +54,7 @@ export default class SplitOperation extends Operation {
 	 * @type {module:engine/model/position~Position}
 	 */
 	get insertionPosition() {
-		const path = this.position.path.slice( -1 );
+		const path = this.position.path.slice( 0, -1 );
 		path[ path.length - 1 ]++;
 
 		return new Position( this.position.root, path );
@@ -67,7 +68,7 @@ export default class SplitOperation extends Operation {
 	 * @type {module:engine/model/position~Position}
 	 */
 	get moveTargetPosition() {
-		const path = this.position.path.slice( -1 );
+		const path = this.position.path.slice( 0, -1 );
 		path[ path.length - 1 ]++;
 		path.push( 0 );
 
@@ -102,6 +103,7 @@ export default class SplitOperation extends Operation {
 	 * @returns {module:engine/model/operation/mergeoperation~MergeOperation}
 	 */
 	getReversed() {
+		// will not reverse long-merge
 		return new MergeOperation( this.moveTargetPosition, this.position, this.baseVersion + 1 );
 	}
 

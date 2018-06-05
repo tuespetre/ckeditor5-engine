@@ -116,9 +116,6 @@ export default class LiveRange extends Range {
  * @method module:engine/model/liverange~LiveRange#bindWithDocument
  */
 function bindWithDocument() {
-	// Operation types that a range can be transformed by.
-	const supportedTypes = new Set( [ 'insert', 'move', 'remove', 'reinsert' ] );
-
 	this.listenTo(
 		this.root.document.model,
 		'applyOperation',
@@ -129,9 +126,7 @@ function bindWithDocument() {
 				return;
 			}
 
-			if ( supportedTypes.has( operation.type ) ) {
-				transform.call( this, operation );
-			}
+			transform.call( this, operation );
 		},
 		{ priority: 'low' }
 	);
@@ -146,7 +141,8 @@ function bindWithDocument() {
  * @param {module:engine/model/operation/operation~Operation} operation Executed operation.
  */
 function transform( operation ) {
-	const result = Range.createFromRanges( this.getTransformedByDelta( operation.delta ) );
+	const ranges = this.getTransformedByDelta( operation.delta );
+	const result = Range.createFromRanges( ranges );
 	const boundariesChanged = !result.isEqual( this );
 	const contentChanged = doesOperationChangeRangeContent( this, operation );
 

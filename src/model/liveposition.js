@@ -119,9 +119,6 @@ export default class LivePosition extends Position {
  * @method module:engine/model/liveposition~LivePosition.bindWithDocument
  */
 function bindWithDocument() {
-	// Operation types handled by LivePosition (these are operations that change model tree structure).
-	const supportedTypes = new Set( [ 'insert', 'move', 'remove', 'reinsert' ] );
-
 	this.listenTo(
 		this.root.document.model,
 		'applyOperation',
@@ -132,9 +129,7 @@ function bindWithDocument() {
 				return;
 			}
 
-			if ( supportedTypes.has( operation.type ) ) {
-				transform.call( this, operation );
-			}
+			transform.call( this, operation );
 		},
 		{ priority: 'low' }
 	);

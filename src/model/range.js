@@ -401,7 +401,7 @@ export default class Range {
 
 		for ( const operation of delta.operations ) {
 			for ( let i = 0; i < ranges.length; i++ ) {
-				let result;
+				let result = null;
 
 				switch ( operation.type ) {
 					case 'insert':
@@ -413,22 +413,23 @@ export default class Range {
 						result = ranges[ i ]._getTransformedByMoveOperation( operation, true );
 						break;
 					case 'split':
-						result = ranges[ i ]._getTransformedBySplitOperation( operation );
+						result = [ ranges[ i ]._getTransformedBySplitOperation( operation ) ];
 						break;
 					case 'merge':
-						result = ranges[ i ]._getTransformedByMergeOperation( operation );
+						result = [ ranges[ i ]._getTransformedByMergeOperation( operation ) ];
 						break;
 					case 'wrap':
-						result = ranges[ i ]._getTransformedByWrapOperation( operation );
+						result = [ ranges[ i ]._getTransformedByWrapOperation( operation ) ];
 						break;
 					case 'unwrap':
-						result = ranges[ i ]._getTransformedByUnwrapOperation( operation );
+						result = [ ranges[ i ]._getTransformedByUnwrapOperation( operation ) ];
 						break;
 				}
 
-				ranges.splice( i, 1, ...result );
-
-				i += result.length - 1;
+				if ( result ) {
+					ranges.splice( i, 1, ...result );
+					i += result.length - 1;
+				}
 			}
 		}
 

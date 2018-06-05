@@ -25,7 +25,7 @@ export default class UnwrapOperation extends Operation {
 	/**
 	 * Creates an unwrap operation.
 	 *
-	 * @param {module:engine/model/position~Position} position Position before the element to unwrap.
+	 * @param {module:engine/model/position~Position} position Position inside the element to unwrap.
 	 * @param {Number} howMany How many nodes are inside unwrapped element.
 	 * @param {Number|null} baseVersion Document {@link module:engine/model/document~Document#version} on which operation
 	 * can be applied or `null` if the operation operates on detached (non-document) tree.
@@ -34,11 +34,12 @@ export default class UnwrapOperation extends Operation {
 		super( baseVersion );
 
 		/**
-		 * Position before the element to unwrap.
+		 * Position inside the element to unwrap.
 		 *
 		 * @member {module:engine/model/position~Position} module:engine/model/operation/unwrapoperation~UnwrapOperation#position
 		 */
 		this.position = Position.createFromPosition( position );
+		this.position.stickiness = 'toPrevious'; // Keep the position always at the beginning of the element.
 
 		/**
 		 * How many nodes are inside unwrapped element.
@@ -68,26 +69,19 @@ export default class UnwrapOperation extends Operation {
 	}
 
 	/**
-	 * Position before the first node from the unwrapped element.
-	 *
-	 * @readonly
-	 * @type {module:engine/model/position~Position}
-	 */
-	get moveSourcePosition() {
-		const path = this.position.path.slice();
-		path.push( 0 );
-
-		return new Position( this.position.root, path );
-	}
-
-	/**
 	 * A range containing all nodes that will be unwrapped.
 	 *
 	 * @readonly
 	 * @type {module:engine/model/range~Range}
 	 */
 	get unwrappedRange() {
-		return Range.createFromPositionAndShift( this.moveSourcePosition, this.howMany );
+		return Range.createFromPositionAndShift( this.position, this.howMany );
+	}
+
+	get targetPosition() {
+		const path = this.position.path.slice( 0, -1 );
+
+		return new Position( this.position.root, path );
 	}
 
 	/**
@@ -116,7 +110,7 @@ export default class UnwrapOperation extends Operation {
 	 * @inheritDoc
 	 */
 	_validate() {
-		const element = this.position.parent.nodeAfter;
+		const element = this.position.parent;
 
 		// Validate whether unwrap operation has correct parameters.
 		if ( !element || !element.is( 'element' ) ) {
@@ -140,13 +134,12 @@ export default class UnwrapOperation extends Operation {
 	 * @inheritDoc
 	 */
 	_execute() {
-		const elementToUnwrap = this.position.parent.nodeAfter;
-		const sourceRange = Range.createIn( elementToUnwrap );
+		const elementToUnwrap = this.position.parent;
 		const targetPosition = Position.createAfter( elementToUnwrap );
 
 		this._element = elementToUnwrap._clone();
 
-		_move( sourceRange, targetPosition );
+		_move( this.unwrappedRange, targetPosition );
 		_remove( Range.createOn( elementToUnwrap ) );
 	}
 

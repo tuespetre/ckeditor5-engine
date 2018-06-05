@@ -199,6 +199,10 @@ export default class Writer {
 
 		const insert = new InsertOperation( position, item, version );
 
+		if ( item instanceof Text ) {
+			insert.shouldReceiveAttributes = true;
+		}
+
 		this.batch.addDelta( delta );
 		delta.addOperation( insert );
 		this.model.applyOperation( insert );
@@ -674,7 +678,7 @@ export default class Writer {
 			// Cache result of the first split.
 			if ( !firstSplitElement && !firstCopyElement ) {
 				firstSplitElement = splitElement;
-				firstCopyElement = position.parent.nodeAfter;
+				firstCopyElement = position.parent.nextSibling;
 			}
 
 			position = Position.createAfter( position.parent );
@@ -784,7 +788,7 @@ export default class Writer {
 		const delta = new UnwrapDelta();
 		this.batch.addDelta( delta );
 
-		const position = Position.createBefore( element );
+		const position = Position.createAt( element, 0 );
 		const version = position.root.document.version;
 
 		const unwrap = new UnwrapOperation( position, element.maxOffset, version );

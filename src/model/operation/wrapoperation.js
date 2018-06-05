@@ -42,6 +42,8 @@ export default class WrapOperation extends Operation {
 		 * @member {module:engine/model/position~Position} module:engine/model/operation/wrapoperation~WrapOperation#position
 		 */
 		this.position = Position.createFromPosition( position );
+		this.position.stickiness = 'toNext';
+		// maybe change to a range
 
 		/**
 		 * Offset size of wrapped range.
@@ -117,7 +119,7 @@ export default class WrapOperation extends Operation {
 		const offset = this.position.offset;
 
 		// Validate whether wrap operation has correct parameters.
-		if ( !element || !element.maxOffset < offset + this.howMany ) {
+		if ( !element || offset + this.howMany > element.maxOffset ) {
 			/**
 			 * Wrap range is invalid.
 			 *
@@ -136,8 +138,12 @@ export default class WrapOperation extends Operation {
 		const insertPosition = Position.createFromPosition( wrappedRange.end );
 		const element = this.element._clone();
 
+		const targetPath = insertPosition.path.slice();
+		targetPath.push( 0 );
+		const targetPosition = new Position( this.position.root, targetPath );
+
 		_insert( insertPosition, element );
-		_move( wrappedRange, this.targetPosition );
+		_move( wrappedRange, targetPosition );
 	}
 
 	/**

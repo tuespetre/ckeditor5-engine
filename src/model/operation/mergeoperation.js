@@ -42,6 +42,7 @@ export default class MergeOperation extends Operation {
 		 * @member {module:engine/model/position~Position} module:engine/model/operation/mergeoperation~MergeOperation#sourcePosition
 		 */
 		this.sourcePosition = Position.createFromPosition( sourcePosition );
+		this.sourcePosition.stickiness = 'toPrevious'; // This is, and should always remain, the first position in its parent.
 
 		/**
 		 * Position which the nodes from the merged elements will be moved to.
@@ -49,6 +50,8 @@ export default class MergeOperation extends Operation {
 		 * @member {module:engine/model/position~Position} module:engine/model/operation/mergeoperation~MergeOperation#targetPosition
 		 */
 		this.targetPosition = Position.createFromPosition( targetPosition );
+		this.targetPosition.stickiness = 'toNext'; // This is, and should always remain, the last position in its parent.
+		// is it? think about reversed split deltas, undo, etc.
 	}
 
 	/**
@@ -65,7 +68,7 @@ export default class MergeOperation extends Operation {
 	 * @type {module:engine/model/position~Position}
 	 */
 	get deletionPosition() {
-		return new Position( this.sourcePosition.root, this.sourcePosition.path.slice( -1 ) );
+		return new Position( this.sourcePosition.root, this.sourcePosition.path.slice( 0, -1 ) );
 	}
 
 	/**
