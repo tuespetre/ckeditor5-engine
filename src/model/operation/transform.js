@@ -38,7 +38,7 @@ function getTransformation( a, b ) {
 		aGroups.add( aGroup );
 	}
 
-	for ( const Operation of transformations.keys ) {
+	for ( const Operation of transformations.keys() ) {
 		if ( a instanceof Operation ) {
 			aGroups.add( transformations.get( Operation ) );
 		}
@@ -49,7 +49,7 @@ function getTransformation( a, b ) {
 			return group.get( OperationB );
 		}
 
-		for ( const Operation of group.keys ) {
+		for ( const Operation of group.keys() ) {
 			if ( b instanceof Operation ) {
 				return group.get( Operation );
 			}
@@ -67,6 +67,8 @@ function updateBaseVersions( operations, baseVersion ) {
 	for ( const operation of operations ) {
 		operation.baseVersion = baseVersion++;
 	}
+
+	return operations;
 }
 
 function transform( a, b, context ) {
@@ -236,7 +238,8 @@ setTransformation( MarkerOperation, MarkerOperation, ( a, b, context ) => {
 		if ( context.isStrong ) {
 			a.oldRange = Range.createFromRange( b.newRange );
 		} else {
-			return getNoOp();
+			// NoOp.
+			a.newRange = Range.createFromRange( b.newRange );
 		}
 	}
 
@@ -566,7 +569,7 @@ setTransformation( MoveOperation, SplitOperation, ( a, b ) => {
 
 setTransformation( MoveOperation, MergeOperation, ( a, b ) => {
 	const moveRange = Range.createFromPositionAndShift( a.sourcePosition, a.howMany );
-	const transformed = moveRange._getTransformedByUnwrapOperation( b );
+	const transformed = moveRange._getTransformedByMergeOperation( b );
 
 	a.sourcePosition = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
@@ -624,7 +627,8 @@ setTransformation( RenameOperation, RenameOperation, ( a, b, context ) => {
 		if ( context.isStrong ) {
 			a.oldName = b.newName;
 		} else {
-			return getNoOp();
+			// NoOp.
+			a.newName = b.newName;
 		}
 	}
 
@@ -683,7 +687,7 @@ setTransformation( SplitOperation, MoveOperation, ( a, b ) => {
 
 setTransformation( SplitOperation, SplitOperation, ( a, b ) => {
 	if ( a.position.isEqual( b.position ) ) {
-		return getNoOp();
+		// could possible be a noop but then it screws up ot
 	}
 
 	a.position = a.position._getTransformedBySplitOperation( b );
@@ -814,18 +818,22 @@ setTransformation( UnwrapOperation, SplitOperation, ( a, b ) => {
 } );
 
 setTransformation( UnwrapOperation, WrapOperation, ( a, b ) => {
-	const transformed = a.unwrappedRange._getTransformedByWrapOperation( b );
+	if ( a.position.isEqual( b.targetPosition ) ) {
+		a.howMany += b.howMany;
+	}
 
-	a.position = transformed.start;
+	a.position = a.position._getTransformedByWrapOperation( b );
 	a.position.stickiness = 'toPrevious';
-	a.howMany = transformed.end.offset - transformed.start.offset;
 
 	return [ a ];
 } );
 
 setTransformation( UnwrapOperation, UnwrapOperation, ( a, b ) => {
-	if ( a.position.isEqual( b ) ) {
-		return getNoOp();
+	if ( a.position.isEqual( b.position ) ) {
+		// NoOp.
+		a.howMany = 0;
+
+		return [ a ];
 	}
 
 	const transformed = a.unwrappedRange._getTransformedByUnwrapOperation( b );

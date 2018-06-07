@@ -103,7 +103,7 @@ export default class UnwrapOperation extends Operation {
 	 * @returns {module:engine/model/operation/wrapoperation~WrapOperation}
 	 */
 	getReversed() {
-		return new WrapOperation( this.position, this.howMany, this._element, this.baseVersion + 1 );
+		return new WrapOperation( this.targetPosition, this.howMany, this._element, this.baseVersion + 1 );
 	}
 
 	/**
@@ -134,6 +134,10 @@ export default class UnwrapOperation extends Operation {
 	 * @inheritDoc
 	 */
 	_execute() {
+		if ( this.howMany == 0 ) {
+			return;
+		}
+
 		const elementToUnwrap = this.position.parent;
 		const targetPosition = Position.createAfter( elementToUnwrap );
 

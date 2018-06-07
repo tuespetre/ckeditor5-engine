@@ -159,7 +159,23 @@ const transform = {
 			// from delta B...
 		}
 
-		return getNormalizedDeltas( a.constructor, transformed );
+		const result = [];
+
+		for ( const operation of transformed ) {
+			let delta;
+
+			if ( operation instanceof NoOperation ) {
+				delta = new Delta();
+			} else {
+				delta = new a.constructor();
+			}
+
+			delta.addOperation( operation );
+
+			result.push( delta );
+		}
+
+		return result;
 	},
 
 	/**
@@ -517,128 +533,6 @@ function _updateContext( oldDelta, newDeltas, context ) {
 
 	for ( const delta of newDeltas ) {
 		context.wasAffected.set( delta, new Map( wasAffected ) );
-	}
-}
-
-// Takes base delta class (`DeltaClass`) and a set of `operations` that are transformation results and creates
-// one or more deltas, acknowledging that the result is a transformation of a delta that is of `DeltaClass`.
-//
-// The normalization ensures that each delta has it's "normal" state, that is, for example, `MoveDelta` has
-// just one `MoveOperation`, `SplitDelta` has just two operations of which first is `InsertOperation` and second
-// is `MoveOperation` or `NoOperation`, etc.
-function getNormalizedDeltas( DeltaClass, operations ) {
-	let deltas = [];
-	let delta = null;
-	let attributeOperationIndex;
-
-	switch ( DeltaClass ) {
-		case MoveDelta:
-		case RemoveDelta:
-			// Normal MoveDelta has just one MoveOperation.
-			// Take all operations and create MoveDelta for each of them.
-			for ( const o of operations ) {
-				if ( o instanceof NoOperation ) {
-					// An operation may be instance of NoOperation and this may be correct.
-					// If that's the case, do not create a MoveDelta with singular NoOperation.
-					// Create "no delta" instead, that is Delta instance with NoOperation.
-					delta = new Delta();
-				} else {
-					if ( o instanceof RemoveOperation ) {
-						delta = new RemoveDelta();
-					} else {
-						delta = new MoveDelta();
-					}
-				}
-
-				delta.addOperation( o );
-				deltas.push( delta );
-			}
-
-			// Return all created MoveDeltas.
-			return deltas;
-		case SplitDelta:
-		case WrapDelta:
-			// Normal SplitDelta and WrapDelta have two operations: first is InsertOperation and second is MoveOperation.
-			// The MoveOperation may be split into multiple MoveOperations.
-			// If that's the case, convert additional MoveOperations into MoveDeltas.
-			// First, create normal SplitDelta or WrapDelta, using first two operations.
-			delta = new DeltaClass();
-			delta.addOperation( operations[ 0 ] );
-			delta.addOperation( operations[ 1 ] );
-			// Then, take all but last two operations and use them to create normalized MoveDeltas.
-			deltas = getNormalizedDeltas( MoveDelta, operations.slice( 2 ) );
-
-			// Return all deltas as one array, in proper order.
-			return [ delta ].concat( deltas );
-		case MergeDelta:
-		case UnwrapDelta:
-			// Normal MergeDelta and UnwrapDelta have two operations: first is MoveOperation and second is RemoveOperation.
-			// The MoveOperation may be split into multiple MoveOperations.
-			// If that's the case, convert additional MoveOperations into MoveDeltas.
-			// Take all but last two operations and use them to create normalized MoveDeltas.
-			deltas = getNormalizedDeltas( MoveDelta, operations.slice( 0, -2 ) );
-			// Then, create normal MergeDelta or UnwrapDelta, using last two operations.
-			delta = new DeltaClass();
-			delta.addOperation( operations[ operations.length - 2 ] );
-			delta.addOperation( operations[ operations.length - 1 ] );
-
-			// Return all deltas as one array, in proper order.
-			return deltas.concat( delta );
-		case RenameDelta:
-			// RenameDelta may become a "no delta" if it's only operation is transformed to NoOperation.
-			// This may happen when RenameOperation is transformed by RenameOperation.
-			// Keep in mind that RenameDelta always have just one operation.
-			if ( operations[ 0 ] instanceof NoOperation ) {
-				delta = new Delta();
-			} else {
-				delta = new RenameDelta();
-			}
-
-			delta.addOperation( operations[ 0 ] );
-
-			return [ delta ];
-		case AttributeDelta:
-			// AttributeDelta is allowed to have multiple AttributeOperations and also NoOperations but
-			// the first operation has to be an AttributeOperation as it is used as a reference for deltas properties.
-			// Keep in mind that we cannot simply remove NoOperations cause that would mess up base versions.
-			// Find an index of first operation that is not a NoOperation.
-			for ( attributeOperationIndex = 0; attributeOperationIndex < operations.length; attributeOperationIndex++ ) {
-				if ( !( operations[ attributeOperationIndex ] instanceof NoOperation ) ) {
-					break;
-				}
-			}
-
-			// No AttributeOperations has been found. Convert AttributeDelta to "no delta".
-			if ( attributeOperationIndex == operations.length ) {
-				delta = new Delta();
-			}
-			// AttributeOperation found.
-			else {
-				delta = new AttributeDelta();
-
-				// AttributeOperation wasn't the first operation.
-				if ( attributeOperationIndex != 0 ) {
-					// Move AttributeOperation to the beginning.
-					operations.unshift( operations.splice( attributeOperationIndex, 1 )[ 0 ] );
-					// No need to update base versions - they are updated at the end of transformation algorithm anyway.
-				}
-			}
-
-			// Add all operations to the delta (even if it is just a couple of NoOperations we have to keep them all).
-			for ( const o of operations ) {
-				delta.addOperation( o );
-			}
-
-			return [ delta ];
-		default:
-			// For all other deltas no normalization is needed.
-			delta = new DeltaClass();
-
-			for ( const o of operations ) {
-				delta.addOperation( o );
-			}
-
-			return [ delta ];
 	}
 }
 

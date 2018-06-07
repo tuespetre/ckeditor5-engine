@@ -99,7 +99,8 @@ export default class MergeOperation extends Operation {
 	 * @returns {module:engine/model/operation/splitoperation~SplitOperation}
 	 */
 	getReversed() {
-		return new SplitOperation( this.sourcePosition, this.baseVersion + 1 );
+		// may insert a wrong element on split
+		return new SplitOperation( this.targetPosition, this.baseVersion + 1 );
 	}
 
 	/**

@@ -105,7 +105,7 @@ export default class WrapOperation extends Operation {
 	 * @returns {module:engine/model/operation/unwrapoperation~UnwrapOperation}
 	 */
 	getReversed() {
-		const op = new UnwrapOperation( this.position, this.howMany, this.baseVersion + 1 );
+		const op = new UnwrapOperation( this.targetPosition, this.howMany, this.baseVersion + 1 );
 		op._element = this.element._clone();
 
 		return op;
