@@ -50,7 +50,7 @@ describe( 'transform', () => {
 				const removeDelta = getRemoveDelta( sourcePosition, 1, baseVersion );
 
 				const mergePosition = new Position( root, [ 3, 3, 3 ] );
-				const mergeDelta = getMergeDelta( mergePosition, 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( mergePosition, 4, baseVersion );
 
 				const transformed = transform( removeDelta, mergeDelta, context );
 
@@ -109,7 +109,7 @@ describe( 'transform', () => {
 
 				const splitPosition = new Position( root, [ 3, 3, 2, 2 ] );
 				const nodeCopy = new Element( 'x' );
-				const splitDelta = getSplitDelta( splitPosition, nodeCopy, 2, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( removeDelta, splitDelta, context );
 
@@ -136,7 +136,7 @@ describe( 'transform', () => {
 
 				const splitPosition = new Position( root, [ 3, 3, 2, 2 ] );
 				const nodeCopy = new Element( 'x' );
-				const splitDelta = getSplitDelta( splitPosition, nodeCopy, 8, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( removeDelta, splitDelta, {
 					isStrong: false,
@@ -164,7 +164,7 @@ describe( 'transform', () => {
 
 				const splitPosition = new Position( root, [ 3, 3, 2 ] );
 				const nodeCopy = new Element( 'div' );
-				const splitDelta = getSplitDelta( splitPosition, nodeCopy, 2, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( removeDelta, splitDelta, context );
 
@@ -191,7 +191,7 @@ describe( 'transform', () => {
 
 				const splitPosition = new Position( root, [ 3, 3, 1, 2 ] );
 				const nodeCopy = new Element( 'x' );
-				const splitDelta = getSplitDelta( splitPosition, nodeCopy, 2, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				context.undoMode = true;
 

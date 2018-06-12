@@ -1830,8 +1830,8 @@ describe( 'Writer', () => {
 
 			expect( root.maxOffset ).to.equal( 5 );
 			expect( root.getChild( 0 ).data ).to.equal( 'fo' );
-			expect( root.getChild( 1 ) ).to.equal( p );
-			expect( p.getChild( 0 ).data ).to.equal( 'ob' );
+			expect( root.getChild( 1 ).name ).to.equal( 'p' );
+			expect( root.getChild( 1 ).getChild( 0 ).data ).to.equal( 'ob' );
 			expect( root.getChild( 2 ).data ).to.equal( 'ar' );
 		} );
 

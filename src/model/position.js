@@ -506,6 +506,9 @@ export default class Position {
 			case 'unwrap':
 				result = this._getTransformedByUnwrapOperation( operation );
 				break;
+			default:
+				result = Position.createFromPosition( this );
+				break;
 		}
 
 		return result;
@@ -639,7 +642,7 @@ export default class Position {
 
 		if ( compareArrays( insertPosition.getParentPath(), this.getParentPath() ) == 'same' ) {
 			// If nodes are inserted in the node that is pointed by this position...
-			if ( insertPosition.offset < this.offset || ( insertPosition.offset == this.offset && this.stickiness == 'toNext' ) ) {
+			if ( insertPosition.offset < this.offset || ( insertPosition.offset == this.offset && this.stickiness != 'toPrevious' ) ) {
 				// And are inserted before an offset of that position...
 				// "Push" this positions offset.
 				transformed.offset += howMany;
@@ -674,8 +677,11 @@ export default class Position {
 		// Then we update target position, as it could be affected by nodes removal too.
 		targetPosition = targetPosition._getTransformedByDeletion( sourcePosition, howMany );
 
-		// 											v this is not exactly precise
-		if ( transformed === null || ( this.stickiness != 'toNone' && transformed.isEqual( sourcePosition ) ) ) {
+		const isMoved = transformed === null ||
+			( sourcePosition.isEqual( this ) && this.stickiness == 'toNext' ) ||
+			( sourcePosition.getShiftedBy( howMany ).isEqual( this ) && this.stickiness == 'toPrevious' );
+
+		if ( isMoved ) {
 			// This position is inside moved range (or sticks to it).
 			// In this case, we calculate a combination of this position, move source position and target position.
 			transformed = this._getCombined( sourcePosition, targetPosition );
@@ -843,7 +849,10 @@ export default class Position {
 	 * @returns {module:engine/model/position~Position}
 	 */
 	static createFromPosition( position ) {
-		return new this( position.root, position.path.slice() );
+		const newPos = new this( position.root, position.path.slice() );
+		newPos.stickiness = position.stickiness;
+
+		return newPos;
 	}
 
 	/**

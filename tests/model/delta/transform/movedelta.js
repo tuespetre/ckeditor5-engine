@@ -52,7 +52,7 @@ describe( 'transform', () => {
 		describe( 'MergeDelta', () => {
 			it( 'node on the right side of merge was moved', () => {
 				const mergePosition = new Position( root, [ 3, 3, 3 ] );
-				const mergeDelta = getMergeDelta( mergePosition, 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( mergePosition, 4, baseVersion );
 
 				const transformed = transform( moveDelta, mergeDelta, context );
 
@@ -112,7 +112,7 @@ describe( 'transform', () => {
 
 			it( 'move range in merged node #1', () => {
 				const mergePosition = new Position( root, [ 3, 3 ] );
-				const mergeDelta = getMergeDelta( mergePosition, 1, 4, baseVersion );
+				const mergeDelta = getMergeDelta( mergePosition, 1, baseVersion );
 
 				const transformed = transform( moveDelta, mergeDelta, context );
 
@@ -139,7 +139,7 @@ describe( 'transform', () => {
 				moveDelta._moveOperation.targetPosition.path = [ 3, 3, 4 ];
 
 				const mergePosition = new Position( root, [ 3, 3 ] );
-				const mergeDelta = getMergeDelta( mergePosition, 1, 4, baseVersion );
+				const mergeDelta = getMergeDelta( mergePosition, 1, baseVersion );
 
 				const transformed = transform( moveDelta, mergeDelta, context );
 
@@ -164,7 +164,7 @@ describe( 'transform', () => {
 			it( 'node on the right side of merge was moved - second merge operation is NoOperation', () => {
 				// If second MergeDelta operation is NoOperation default algorithm should be used.
 				const mergePosition = new Position( root, [ 3, 3, 3 ] );
-				const mergeDelta = getMergeDelta( mergePosition, 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( mergePosition, 4, baseVersion );
 				mergeDelta.operations[ 1 ] = new NoOperation( 1 );
 
 				const transformed = transform( moveDelta, mergeDelta, context );

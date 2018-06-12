@@ -79,7 +79,7 @@ describe( 'transform', () => {
 
 		describe( 'MergeDelta', () => {
 			it( 'merge in same position as insert', () => {
-				const mergeDelta = getMergeDelta( insertPosition, 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( insertPosition, 4, baseVersion );
 				const transformed = transform( insertDelta, mergeDelta, context );
 
 				baseVersion = mergeDelta.operations.length;
@@ -135,7 +135,7 @@ describe( 'transform', () => {
 
 			it( 'merge in same position as insert - undo mode', () => {
 				// In undo mode, default transformation algorithm should be used.
-				const mergeDelta = getMergeDelta( insertPosition, 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( insertPosition, 4, baseVersion );
 
 				context.undoMode = true;
 				const transformed = transform( insertDelta, mergeDelta, context );
@@ -159,7 +159,7 @@ describe( 'transform', () => {
 
 			it( 'merge in same position as insert - undo mode', () => {
 				// If MergeDelta second operation is NoOperation, default transformation algorithm should be used.
-				const mergeDelta = getMergeDelta( insertPosition, 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( insertPosition, 4, baseVersion );
 				mergeDelta.operations[ 1 ] = new NoOperation( 1 );
 
 				const transformed = transform( insertDelta, mergeDelta, context );
@@ -182,7 +182,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'merge the node that is parent of insert position (sticky move test)', () => {
-				const mergeDelta = getMergeDelta( new Position( root, [ 3, 3 ] ), 1, 4, baseVersion );
+				const mergeDelta = getMergeDelta( new Position( root, [ 3, 3 ] ), 1, baseVersion );
 				const transformed = transform( insertDelta, mergeDelta, context );
 
 				baseVersion = mergeDelta.operations.length;
@@ -215,7 +215,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'merge at affected position but resolved by default OT', () => {
-				const mergeDelta = getMergeDelta( new Position( root, [ 3 ] ), 1, 4, baseVersion );
+				const mergeDelta = getMergeDelta( new Position( root, [ 3 ] ), 1, baseVersion );
 				const transformed = transform( insertDelta, mergeDelta, context );
 
 				baseVersion = mergeDelta.operations.length;

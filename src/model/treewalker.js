@@ -90,6 +90,8 @@ export default class TreeWalker {
 			this.position = Position.createFromPosition( this.boundaries[ this.direction == 'backward' ? 'end' : 'start' ] );
 		}
 
+		this.position.stickiness = 'toNone';
+
 		/**
 		 * Flag indicating whether all consecutive characters with the same attributes should be
 		 * returned as one {@link module:engine/model/textproxy~TextProxy} (`true`) or one by one (`false`).

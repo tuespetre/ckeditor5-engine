@@ -31,17 +31,6 @@ describe( 'MoveOperation', () => {
 		expect( op.type ).to.equal( 'move' );
 	} );
 
-	it( 'should be sticky', () => {
-		const op = new MoveOperation(
-			new Position( root, [ 0, 0 ] ),
-			1,
-			new Position( root, [ 1, 0 ] ),
-			doc.version
-		);
-
-		expect( op.isSticky ).to.be.false;
-	} );
-
 	it( 'should move from one node to another', () => {
 		const p1 = new Element( 'p1', [], new Element( 'x' ) );
 		const p2 = new Element( 'p2' );
@@ -283,9 +272,8 @@ describe( 'MoveOperation', () => {
 				__className: 'engine.model.operation.MoveOperation',
 				baseVersion: 0,
 				howMany: 1,
-				isSticky: false,
-				sourcePosition: jsonParseStringify( sourcePosition ),
-				targetPosition: jsonParseStringify( targetPosition )
+				sourcePosition: jsonParseStringify( op.sourcePosition ),
+				targetPosition: jsonParseStringify( op.targetPosition )
 			} );
 		} );
 	} );
@@ -295,18 +283,6 @@ describe( 'MoveOperation', () => {
 			const sourcePosition = new Position( root, [ 0, 0 ] );
 			const targetPosition = new Position( root, [ 1, 0 ] );
 			const op = new MoveOperation( sourcePosition, 1, targetPosition, doc.version );
-
-			const serialized = jsonParseStringify( op );
-			const deserialized = MoveOperation.fromJSON( serialized, doc );
-
-			expect( deserialized ).to.deep.equal( op );
-		} );
-
-		it( 'should create proper MoveOperation from json object - sticky', () => {
-			const sourcePosition = new Position( root, [ 0, 0 ] );
-			const targetPosition = new Position( root, [ 1, 0 ] );
-			const op = new MoveOperation( sourcePosition, 1, targetPosition, doc.version );
-			op.isSticky = true;
 
 			const serialized = jsonParseStringify( op );
 			const deserialized = MoveOperation.fromJSON( serialized, doc );

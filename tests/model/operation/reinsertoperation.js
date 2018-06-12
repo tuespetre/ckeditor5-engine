@@ -46,10 +46,6 @@ describe( 'ReinsertOperation', () => {
 		expect( operation.type ).to.equal( 'reinsert' );
 	} );
 
-	it( 'should not be sticky', () => {
-		expect( operation.isSticky ).to.be.false;
-	} );
-
 	it( 'should extend MoveOperation class', () => {
 		expect( operation ).to.be.instanceof( MoveOperation );
 	} );
@@ -144,7 +140,6 @@ describe( 'ReinsertOperation', () => {
 				__className: 'engine.model.operation.ReinsertOperation',
 				baseVersion: 0,
 				howMany: 2,
-				isSticky: false,
 				sourcePosition: jsonParseStringify( operation.sourcePosition ),
 				targetPosition: jsonParseStringify( operation.targetPosition )
 			} );

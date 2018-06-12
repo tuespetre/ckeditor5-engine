@@ -32,7 +32,6 @@ export default class Range {
 		 * @member {module:engine/model/position~Position}
 		 */
 		this.start = Position.createFromPosition( start );
-		this.start.stickiness = 'toNext';
 
 		/**
 		 * End position.
@@ -41,7 +40,9 @@ export default class Range {
 		 * @member {module:engine/model/position~Position}
 		 */
 		this.end = end ? Position.createFromPosition( end ) : Position.createFromPosition( start );
-		this.end.stickiness = this.isCollapsed ? 'toNext' : 'toPrevious';
+
+		this.start.stickiness = this.isCollapsed ? 'toNone' : 'toNext';
+		this.end.stickiness = this.isCollapsed ? 'toNone' : 'toPrevious';
 	}
 
 	/**
@@ -546,14 +547,14 @@ export default class Range {
 
 	_getTransformedBySplitOperation( operation ) {
 		const start = this.start._getTransformedBySplitOperation( operation );
-		const end = this.start._getTransformedBySplitOperation( operation );
+		const end = this.end._getTransformedBySplitOperation( operation );
 
 		return new Range( start, end );
 	}
 
 	_getTransformedByMergeOperation( operation ) {
 		const start = this.start._getTransformedByMergeOperation( operation );
-		const end = this.start._getTransformedByMergeOperation( operation );
+		const end = this.end._getTransformedByMergeOperation( operation );
 
 		if ( start.isAfter( end ) ) {
 			// This happens in the following case:
@@ -569,14 +570,14 @@ export default class Range {
 
 	_getTransformedByWrapOperation( operation ) {
 		const start = this.start._getTransformedByWrapOperation( operation );
-		const end = this.start._getTransformedByWrapOperation( operation );
+		const end = this.end._getTransformedByWrapOperation( operation );
 
 		return new Range( start, end );
 	}
 
 	_getTransformedByUnwrapOperation( operation ) {
 		const start = this.start._getTransformedByUnwrapOperation( operation );
-		const end = this.start._getTransformedByUnwrapOperation( operation );
+		const end = this.end._getTransformedByUnwrapOperation( operation );
 
 		return new Range( start, end );
 	}
@@ -617,7 +618,7 @@ export default class Range {
 			return [
 				new Range( this.start, insertPosition ),
 				new Range(
-					insertPosition._getTransformedByInsertion( insertPosition, howMany ),
+					insertPosition.getShiftedBy( howMany ),
 					this.end._getTransformedByInsertion( insertPosition, howMany )
 				)
 			];

@@ -53,7 +53,7 @@ describe( 'transform', () => {
 		describe( 'SplitDelta', () => {
 			it( 'split position is between wrapped nodes', () => {
 				const splitPosition = new Position( root, [ 3, 3, 3, 3 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( wrapDelta, splitDelta, context );
 
@@ -112,7 +112,7 @@ describe( 'transform', () => {
 
 			it( 'split position is before wrapped nodes', () => {
 				const splitPosition = new Position( root, [ 3, 3, 3, 1 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 11, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( wrapDelta, splitDelta, context );
 
@@ -156,7 +156,7 @@ describe( 'transform', () => {
 				wrapDelta = getWrapDelta( wrapRange, wrapElement, baseVersion );
 
 				const splitPosition = new Position( root, [ 3, 3, 3, 3 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( wrapDelta, splitDelta, context );
 
@@ -194,7 +194,7 @@ describe( 'transform', () => {
 
 			it( 'should use default algorithm and not throw if split delta has NoOperation', () => {
 				const splitPosition = new Position( root, [ 3, 3, 2, 1 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 11, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 				splitDelta.operations[ 1 ] = new NoOperation( 1 );
 
 				const transformed = transform( wrapDelta, splitDelta, context );

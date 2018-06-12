@@ -221,6 +221,7 @@ describe( 'InsertOperation', () => {
 		it( 'should create proper json object', () => {
 			const position = new Position( root, [ 0 ] );
 			const op = new InsertOperation( position, new Text( 'x' ), doc.version );
+			op.shouldReceiveAttributes = true;
 
 			const serialized = jsonParseStringify( op );
 
@@ -228,7 +229,8 @@ describe( 'InsertOperation', () => {
 				__className: 'engine.model.operation.InsertOperation',
 				baseVersion: 0,
 				nodes: jsonParseStringify( new NodeList( [ new Text( 'x' ) ] ) ),
-				position: jsonParseStringify( position )
+				position: jsonParseStringify( position ),
+				shouldReceiveAttributes: true
 			} );
 		} );
 	} );

@@ -116,7 +116,8 @@ describe( 'LivePosition', () => {
 				expect( spy.calledOnce ).to.be.true;
 			} );
 
-			it( 'is at the same position and live position is sticking to right side', () => {
+			it( 'is at the same position and live position is sticking to the next node', () => {
+				live.stickiness = 'toNext';
 				model.change( writer => {
 					writer.insertText( 'foo', new Position( root, [ 1, 1, 3 ] ) );
 				} );
@@ -150,6 +151,7 @@ describe( 'LivePosition', () => {
 			} );
 
 			it( 'is at the same position and live position is sticking to right side', () => {
+				live.stickiness = 'toNext';
 				model.change( writer => {
 					const sourcePosition = new Position( root, [ 1, 0, 1 ] );
 					const sourceRange = Range.createFromPositionAndShift( sourcePosition, 3 );

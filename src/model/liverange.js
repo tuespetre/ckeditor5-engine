@@ -171,7 +171,9 @@ function doesOperationChangeRangeContent( range, operation ) {
 		case 'remove':
 		case 'reinsert':
 		case 'merge':
-			return range.containsPosition( operation.sourcePosition ) || range.containsPosition( operation.targetPosition );
+			return range.containsPosition( operation.sourcePosition ) ||
+				range.start.isEqual( operation.sourcePosition ) ||
+				range.containsPosition( operation.targetPosition );
 	}
 
 	return false;

@@ -35,17 +35,6 @@ describe( 'RemoveOperation', () => {
 		expect( op.type ).to.equal( 'remove' );
 	} );
 
-	it( 'should not be sticky', () => {
-		const op = new RemoveOperation(
-			new Position( root, [ 2 ] ),
-			2,
-			new Position( doc.graveyard, [ 0 ] ),
-			doc.version
-		);
-
-		expect( op.isSticky ).to.be.false;
-	} );
-
 	it( 'should extend MoveOperation class', () => {
 		const operation = new RemoveOperation(
 			new Position( root, [ 2 ] ),
@@ -178,7 +167,6 @@ describe( 'RemoveOperation', () => {
 				__className: 'engine.model.operation.RemoveOperation',
 				baseVersion: 0,
 				howMany: 2,
-				isSticky: false,
 				sourcePosition: jsonParseStringify( op.sourcePosition ),
 				targetPosition: jsonParseStringify( op.targetPosition )
 			} );

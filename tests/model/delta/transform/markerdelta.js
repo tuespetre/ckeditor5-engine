@@ -47,7 +47,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'split inside oldRange', () => {
-				const splitDelta = getSplitDelta( new Position( root, [ 3, 1 ] ), new Element( 'div' ), 3, baseVersion );
+				const splitDelta = getSplitDelta( new Position( root, [ 3, 1 ] ), baseVersion );
 				const transformed = transform( markerDelta, splitDelta, context );
 
 				baseVersion = splitDelta.operations.length;
@@ -72,7 +72,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'split inside newRange', () => {
-				const splitDelta = getSplitDelta( new Position( root, [ 3, 3, 3, 4 ] ), new Element( 'p' ), 8, baseVersion );
+				const splitDelta = getSplitDelta( new Position( root, [ 3, 3, 3, 4 ] ), baseVersion );
 				const transformed = transform( markerDelta, splitDelta, context );
 
 				baseVersion = splitDelta.operations.length;
@@ -106,7 +106,7 @@ describe( 'transform', () => {
 				const markerDelta = getMarkerDelta( 'name', oldRange, newRange, baseVersion );
 
 				// MergeDelta merges the element in which is collapsed marker range with the previous element.
-				const mergeDelta = getMergeDelta( new Position( root, [ 3, 3, 3 ] ), 4, 12, baseVersion );
+				const mergeDelta = getMergeDelta( new Position( root, [ 3, 3, 3 ] ), 4, baseVersion );
 
 				const transformed = transform( markerDelta, mergeDelta, context );
 

@@ -52,12 +52,12 @@ describe( 'transform', () => {
 
 		beforeEach( () => {
 			splitPosition = new Position( root, [ 3, 3, 3, 3 ] );
-			splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+			splitDelta = getSplitDelta( splitPosition, baseVersion );
 		} );
 
 		describe( 'SplitDelta', () => {
 			it( 'split in same parent and offset - isStrong = false', () => {
-				const splitDeltaB = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDeltaB = getSplitDelta( splitPosition, baseVersion );
 				const transformed = transform( splitDelta, splitDeltaB, context );
 
 				baseVersion = splitDeltaB.operations.length;
@@ -93,7 +93,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'split in same parent and offset - isStrong = true', () => {
-				const splitDeltaB = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDeltaB = getSplitDelta( splitPosition, baseVersion );
 
 				context.isStrong = true;
 				const transformed = transform( splitDelta, splitDeltaB, context );
@@ -131,7 +131,7 @@ describe( 'transform', () => {
 				// SplitDelta x SplitDelta transformation case sets `context.insertBefore` on its own if it is not set.
 				// It is to achieve better transformation results from UX point of view.
 				// However, if `context.insertBefore` was already set, it should not be changed. This might be important for undo.
-				const splitDeltaB = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDeltaB = getSplitDelta( splitPosition, baseVersion );
 				const transformed = transform( splitDelta, splitDeltaB, {
 					isStrong: false,
 					insertBefore: true,
@@ -160,7 +160,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'split in same parent, incoming delta splits closer', () => {
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 5 ] ), new Element( 'p' ), 7, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 5 ] ), baseVersion );
 				const transformed = transform( splitDelta, splitDeltaB, context );
 
 				baseVersion = splitDeltaB.operations.length;
@@ -205,7 +205,7 @@ describe( 'transform', () => {
 				);
 				splitDelta.operations[ 0 ] = reOp;
 
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 5 ] ), new Element( 'p' ), 7, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 5 ] ), baseVersion );
 				reOp = new ReinsertOperation(
 					new Position( gy, [ 0 ] ),
 					1,
@@ -242,7 +242,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'split in same parent, incoming delta splits further', () => {
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), new Element( 'p' ), 11, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), baseVersion );
 				const transformed = transform( splitDelta, splitDeltaB, context );
 
 				baseVersion = splitDeltaB.operations.length;
@@ -287,7 +287,7 @@ describe( 'transform', () => {
 				);
 				splitDelta.operations[ 0 ] = reOp;
 
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), new Element( 'p' ), 11, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), baseVersion );
 				reOp = new ReinsertOperation(
 					new Position( gy, [ 0 ] ),
 					1,
@@ -324,7 +324,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'split in split parent', () => {
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3 ] ), new Element( 'div' ), 1, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3 ] ), baseVersion );
 				const transformed = transform( splitDelta, splitDeltaB, context );
 
 				baseVersion = splitDeltaB.operations.length;
@@ -362,7 +362,7 @@ describe( 'transform', () => {
 
 			it( 'should use default algorithm and not throw if transformed split delta has NoOperation', () => {
 				splitDelta.operations[ 1 ] = new NoOperation( 1 );
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), new Element( 'p' ), 11, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), baseVersion );
 
 				const transformed = transform( splitDelta, splitDeltaB, context );
 
@@ -387,7 +387,7 @@ describe( 'transform', () => {
 			} );
 
 			it( 'should use default algorithm and not throw if split delta to transform by has NoOperation', () => {
-				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), new Element( 'p' ), 11, baseVersion );
+				const splitDeltaB = getSplitDelta( new Position( root, [ 3, 3, 3, 1 ] ), baseVersion );
 				splitDeltaB.operations[ 1 ] = new NoOperation( 1 );
 
 				const transformed = transform( splitDelta, splitDeltaB, context );
@@ -954,7 +954,7 @@ describe( 'transform', () => {
 		describe( 'RemoveDelta', () => {
 			it( 'node inside the removed range was a node that has been split', () => {
 				splitPosition = new Position( root, [ 3, 3, 2, 2 ] );
-				splitDelta = getSplitDelta( splitPosition, new Element( 'x' ), 2, baseVersion );
+				splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const removePosition = new Position( root, [ 3, 3, 1 ] );
 				const removeDelta = getRemoveDelta( removePosition, 3, baseVersion );

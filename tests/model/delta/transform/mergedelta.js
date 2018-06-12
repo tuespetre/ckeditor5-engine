@@ -46,7 +46,7 @@ describe( 'transform', () => {
 
 		beforeEach( () => {
 			mergePosition = new Position( root, [ 3, 3, 3 ] );
-			mergeDelta = getMergeDelta( mergePosition, 4, 12, baseVersion );
+			mergeDelta = getMergeDelta( mergePosition, 4, baseVersion );
 		} );
 
 		describe( 'InsertDelta', () => {
@@ -288,7 +288,7 @@ describe( 'transform', () => {
 
 		describe( 'MergeDelta', () => {
 			it( 'merge two consecutive elements, transformed merge is after', () => {
-				const mergeDeltaB = getMergeDelta( new Position( root, [ 3, 3, 2 ] ), 0, 4, baseVersion );
+				const mergeDeltaB = getMergeDelta( new Position( root, [ 3, 3, 2 ] ), 0, baseVersion );
 				const transformed = transform( mergeDelta, mergeDeltaB, context );
 
 				expect( transformed.length ).to.equal( 1 );
@@ -324,8 +324,8 @@ describe( 'transform', () => {
 			} );
 
 			it( 'merge two consecutive elements, transformed merge is before', () => {
-				mergeDelta = getMergeDelta( new Position( root, [ 3, 3, 2 ] ), 0, 4, baseVersion );
-				const mergeDeltaB = getMergeDelta( new Position( root, [ 3, 3, 3 ] ), 4, 12, baseVersion );
+				mergeDelta = getMergeDelta( new Position( root, [ 3, 3, 2 ] ), 0, baseVersion );
+				const mergeDeltaB = getMergeDelta( new Position( root, [ 3, 3, 3 ] ), 4, baseVersion );
 
 				const transformed = transform( mergeDelta, mergeDeltaB, context );
 

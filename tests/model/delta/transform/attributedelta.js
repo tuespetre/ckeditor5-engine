@@ -155,7 +155,7 @@ describe( 'transform', () => {
 				attrDelta.addOperation( new AttributeOperation( attrRange2, 'key', 'old', 'new', baseVersion ) );
 
 				const splitPosition = new Position( root, [ 3, 3, 3, 3 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( attrDelta, splitDelta, context );
 
@@ -223,7 +223,7 @@ describe( 'transform', () => {
 				attrDelta.addOperation( new AttributeOperation( attrRange, 'foo', null, 'bar', baseVersion ) );
 
 				const splitPosition = new Position( root, [ 3, 3, 3, 3 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p', { foo: 'old' } ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( attrDelta, splitDelta, context );
 
@@ -311,7 +311,7 @@ describe( 'transform', () => {
 			it( 'should use default algorithm and not throw if split delta has NoOperation', () => {
 				const range = new Range( new Position( root, [ 1 ] ), new Position( root, [ 2, 3 ] ) );
 				const attrDelta = getAttributeDelta( range, 'foo', null, 'bar', 0 );
-				const splitDelta = getSplitDelta( new Position( root, [ 0, 2 ] ), new Element( 'paragraph' ), 3, 0 );
+				const splitDelta = getSplitDelta( new Position( root, [ 0, 2 ] ), 0 );
 				splitDelta.operations[ 1 ] = new NoOperation( 1 );
 
 				const transformed = transform( attrDelta, splitDelta, context );

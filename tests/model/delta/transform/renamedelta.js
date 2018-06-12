@@ -45,7 +45,7 @@ describe( 'transform', () => {
 				) );
 
 				const splitPosition = new Position( root, [ 3, 3, 3 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( renameDelta, splitDelta, context );
 
@@ -88,7 +88,7 @@ describe( 'transform', () => {
 				) );
 
 				const splitPosition = new Position( root, [ 3, 3, 3 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				context.undoMode = true;
 
@@ -121,7 +121,7 @@ describe( 'transform', () => {
 				) );
 
 				const splitPosition = new Position( root, [ 3, 2, 1 ] );
-				const splitDelta = getSplitDelta( splitPosition, new Element( 'p' ), 9, baseVersion );
+				const splitDelta = getSplitDelta( splitPosition, baseVersion );
 
 				const transformed = transform( renameDelta, splitDelta, context );
 

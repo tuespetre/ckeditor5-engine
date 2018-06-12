@@ -15,6 +15,7 @@ import InsertOperation from '../../src/model/operation/insertoperation';
 import MoveOperation from '../../src/model/operation/moveoperation';
 import RemoveOperation from '../../src/model/operation/removeoperation';
 import AttributeOperation from '../../src/model/operation/attributeoperation';
+import SplitOperation from '../../src/model/operation/splitoperation';
 import SplitDelta from '../../src/model/delta/splitdelta';
 import CKEditorError from '@ckeditor/ckeditor5-utils/src/ckeditorerror';
 import count from '@ckeditor/ckeditor5-utils/src/count';
@@ -1050,27 +1051,11 @@ describe( 'DocumentSelection', () => {
 
 				const batch = new Batch();
 				const splitDelta = new SplitDelta();
-
-				const insertOperation = new InsertOperation(
-					new Position( root, [ 2 ] ),
-					new Element( 'p' ),
-					0
-				);
-
-				const moveOperation = new MoveOperation(
-					new Position( root, [ 1, 2 ] ),
-					4,
-					new Position( root, [ 2, 0 ] ),
-					1
-				);
+				const splitOperation = new SplitOperation( new Position( root, [ 1, 2 ] ), 0 );
 
 				batch.addDelta( splitDelta );
-
-				splitDelta.addOperation( insertOperation );
-				splitDelta.addOperation( moveOperation );
-
-				model.applyOperation( insertOperation );
-				model.applyOperation( moveOperation );
+				splitDelta.addOperation( splitOperation );
+				model.applyOperation( splitOperation );
 
 				const range = selection.getFirstRange();
 

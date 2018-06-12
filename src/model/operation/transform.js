@@ -223,11 +223,11 @@ setTransformation( InsertOperation, UnwrapOperation, ( a, b ) => {
 
 setTransformation( MarkerOperation, InsertOperation, ( a, b ) => {
 	if ( a.oldRange ) {
-		a.oldRange = a.oldRange._getTransformedByInsertOperation( b );
+		a.oldRange = a.oldRange._getTransformedByInsertOperation( b )[ 0 ];
 	}
 
 	if ( a.newRange ) {
-		a.newRange = a.newRange._getTransformedByInsertOperation( b );
+		a.newRange = a.newRange._getTransformedByInsertOperation( b )[ 0 ];
 	}
 
 	return [ a ];
@@ -363,11 +363,13 @@ setTransformation( MergeOperation, UnwrapOperation, ( a, b ) => {
 
 setTransformation( MoveOperation, InsertOperation, ( a, b, context ) => {
 	const moveRange = Range.createFromPositionAndShift( a.sourcePosition, a.howMany );
-	const transformed = moveRange._getTransformedByInsertOperation( b, false );
+	const transformed = moveRange._getTransformedByInsertOperation( b, false )[ 0 ];
 
 	a.sourcePosition = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
 	a.targetPosition = a.targetPosition._getTransformedByInsertOperation( b /*, ???*/ ); // needs insert before ?
+
+	return [ a ];
 } );
 
 setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
@@ -714,7 +716,7 @@ setTransformation( SplitOperation, UnwrapOperation, ( a, b ) => {
 // -----------------------
 
 setTransformation( WrapOperation, InsertOperation, ( a, b ) => {
-	const transformed = a.wrappedRange._getTransformedByInsertOperation( b, false );
+	const transformed = a.wrappedRange._getTransformedByInsertOperation( b, false )[ 0 ];
 
 	a.position = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
@@ -775,7 +777,7 @@ setTransformation( WrapOperation, UnwrapOperation, ( a, b ) => {
 
 setTransformation( UnwrapOperation, InsertOperation, ( a, b ) => {
 	// range will change a.position stickiness -- this sucks
-	const transformed = a.unwrappedRange._getTransformedByInsertOperation( b, false );
+	const transformed = a.unwrappedRange._getTransformedByInsertOperation( b, false )[ 0 ];
 
 	a.position = transformed.start;
 	a.position.stickiness = 'toPrevious';

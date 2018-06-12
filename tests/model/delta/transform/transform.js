@@ -64,7 +64,7 @@ describe( 'transform', () => {
 		} );
 
 		it( 'should transform two arrays of deltas', () => {
-			const splitDelta = getSplitDelta( new Position( root, [ 0, 3 ] ), new Element( 'p' ), 3, baseVersion );
+			const splitDelta = getSplitDelta( new Position( root, [ 0, 3 ] ), baseVersion );
 			const insertDeltaX = getInsertDelta( new Position( root, [ 0, 3 ] ), new Text( 'xxx' ), baseVersion + 2 );
 
 			const removeDelta = getRemoveDelta( new Position( root, [ 0, 2 ] ), 2, baseVersion );
@@ -151,7 +151,7 @@ describe( 'transform', () => {
 		} );
 
 		it( 'should transform two arrays of deltas - reverse', () => {
-			const splitDelta = getSplitDelta( new Position( root, [ 0, 3 ] ), new Element( 'p' ), 3, baseVersion );
+			const splitDelta = getSplitDelta( new Position( root, [ 0, 3 ] ), baseVersion );
 			const insertDeltaX = getInsertDelta( new Position( root, [ 0, 3 ] ), new Text( 'xxx' ), baseVersion + 2 );
 
 			const removeDelta = getRemoveDelta( new Position( root, [ 0, 2 ] ), 2, baseVersion );
@@ -350,7 +350,7 @@ describe( 'transform', () => {
 				const unwrapDelta = getUnwrapDelta( new Position( root, [ 0 ] ), 2, baseVersion );
 
 				const nodeCopy = new Element( 'p' );
-				const splitDelta = getSplitDelta( new Position( root, [ 0, 0, 1 ] ), nodeCopy, 1, baseVersion );
+				const splitDelta = getSplitDelta( new Position( root, [ 0, 0, 1 ] ), baseVersion );
 				const mergeDelta = splitDelta.getReversed();
 
 				const { deltasA } = transformDeltaSets( [ unwrapDelta ], [ splitDelta, mergeDelta ], doc );
@@ -517,7 +517,7 @@ describe( 'transform', () => {
 				const removeDelta = getRemoveDelta( new Position( root, [ 0, 1 ] ), 1, baseVersion );
 				// Then we merge paragraphs:	<paragraph>acd</paragraph>
 				// Keep in mind that merging has sticky move operation ('cd' is sticky-moved to the first paragraph).
-				const mergeDelta = getMergeDelta( new Position( root, [ 1 ] ), 2, 1, baseVersion + 1 );
+				const mergeDelta = getMergeDelta( new Position( root, [ 1 ] ), 2, baseVersion + 1 );
 				// Then we reverse merging:		<paragraph>a</paragraph><paragraph>cd</paragraph>
 				// Keep in mind that now we have two deltas with sticky moves in a history.
 				const splitDelta = mergeDelta.getReversed();

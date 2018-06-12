@@ -14,7 +14,6 @@ import Batch from '../../../../../src/model/batch';
 
 import AttributeDelta from '../../../../../src/model/delta/attributedelta';
 import InsertDelta from '../../../../../src/model/delta/insertdelta';
-import WeakInsertDelta from '../../../../../src/model/delta/weakinsertdelta';
 import RenameDelta from '../../../../../src/model/delta/renamedelta';
 import RemoveDelta from '../../../../../src/model/delta/removedelta';
 import MarkerDelta from '../../../../../src/model/delta/markerdelta';
@@ -30,6 +29,10 @@ import MarkerOperation from '../../../../../src/model/operation/markeroperation'
 import MoveOperation from '../../../../../src/model/operation/moveoperation';
 import RemoveOperation from '../../../../../src/model/operation/removeoperation';
 import RenameOperation from '../../../../../src/model/operation/renameoperation';
+import MergeOperation from '../../../../../src/model/operation/mergeoperation';
+import SplitOperation from '../../../../../src/model/operation/splitoperation';
+import WrapOperation from '../../../../../src/model/operation/wrapoperation';
+import UnwrapOperation from '../../../../../src/model/operation/unwrapoperation';
 
 export function getAttributeDelta( range, key, oldValue, newValue, version ) {
 	const delta = new AttributeDelta();
@@ -48,8 +51,11 @@ export function getInsertDelta( position, nodes, version ) {
 }
 
 export function getWeakInsertDelta( position, nodes, version ) {
-	const delta = new WeakInsertDelta();
-	delta.addOperation( new InsertOperation( position, nodes, version ) );
+	const delta = new InsertDelta();
+	const insert = new InsertOperation( position, nodes, version );
+	insert.shouldReceiveAttributes = true;
+
+	delta.addOperation( insert );
 
 	wrapInBatch( delta );
 
@@ -65,7 +71,7 @@ export function getMarkerDelta( name, oldRange, newRange, version ) {
 	return delta;
 }
 
-export function getMergeDelta( position, howManyInPrev, howManyInNext, version ) {
+export function getMergeDelta( position, howManyInPrev, version ) {
 	const delta = new MergeDelta();
 
 	const sourcePosition = Position.createFromPosition( position );
@@ -75,15 +81,9 @@ export function getMergeDelta( position, howManyInPrev, howManyInNext, version )
 	targetPosition.offset--;
 	targetPosition.path.push( howManyInPrev );
 
-	const move = new MoveOperation( sourcePosition, howManyInNext, targetPosition, version );
-	move.isSticky = true;
+	const merge = new MergeOperation( sourcePosition, targetPosition, version );
 
-	delta.addOperation( move );
-
-	const gy = sourcePosition.root.document.graveyard;
-	const gyPos = Position.createAt( gy, 0 );
-
-	delta.addOperation( new RemoveOperation( position, 1, gyPos, version + 1 ) );
+	delta.addOperation( merge );
 
 	wrapInBatch( delta );
 
@@ -126,22 +126,10 @@ export function getRenameDelta( position, oldName, newName, baseVersion ) {
 	return delta;
 }
 
-export function getSplitDelta( position, nodeCopy, howManyMove, version ) {
+export function getSplitDelta( position, version ) {
 	const delta = new SplitDelta();
 
-	const insertPosition = Position.createFromPosition( position );
-	insertPosition.path = insertPosition.getParentPath();
-	insertPosition.offset++;
-
-	const targetPosition = Position.createFromPosition( insertPosition );
-	targetPosition.path.push( 0 );
-
-	delta.addOperation( new InsertOperation( insertPosition, [ nodeCopy ], version ) );
-
-	const move = new MoveOperation( position, howManyMove, targetPosition, version + 1 );
-	move.isSticky = true;
-
-	delta.addOperation( move );
+	delta.addOperation( new SplitOperation( position, version ) );
 
 	wrapInBatch( delta );
 
@@ -151,14 +139,8 @@ export function getSplitDelta( position, nodeCopy, howManyMove, version ) {
 export function getWrapDelta( range, element, version ) {
 	const delta = new WrapDelta();
 
-	const insert = new InsertOperation( range.end, element, version );
-
-	const targetPosition = Position.createFromPosition( range.end );
-	targetPosition.path.push( 0 );
-	const move = new MoveOperation( range.start, range.end.offset - range.start.offset, targetPosition, version + 1 );
-
-	delta.addOperation( insert );
-	delta.addOperation( move );
+	const howMany = range.end.offset - range.start.offset;
+	delta.addOperation( new WrapOperation( range.start, howMany, element, version ) );
 
 	wrapInBatch( delta );
 
@@ -168,22 +150,11 @@ export function getWrapDelta( range, element, version ) {
 export function getUnwrapDelta( positionBefore, howManyChildren, version ) {
 	const delta = new UnwrapDelta();
 
-	const sourcePosition = Position.createFromPosition( positionBefore );
-	sourcePosition.path.push( 0 );
+	const path = positionBefore.path.slice();
+	path.push( 0 );
+	const position = new Position( positionBefore.root, path );
 
-	const move = new MoveOperation( sourcePosition, howManyChildren, positionBefore, version );
-	move.isSticky = true;
-
-	const removePosition = Position.createFromPosition( positionBefore );
-	removePosition.offset += howManyChildren;
-
-	const gy = sourcePosition.root.document.graveyard;
-	const gyPos = Position.createAt( gy, 0 );
-
-	const remove = new RemoveOperation( removePosition, 1, gyPos, version + 1 );
-
-	delta.addOperation( move );
-	delta.addOperation( remove );
+	delta.addOperation( new UnwrapOperation( position, howManyChildren, version ) );
 
 	wrapInBatch( delta );
 
