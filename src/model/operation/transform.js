@@ -5,12 +5,14 @@ import MarkerOperation from './markeroperation';
 import MoveOperation from './moveoperation';
 import RemoveOperation from './removeoperation';
 import ReinsertOperation from './reinsertoperation';
+import RootAttributeOperation from './rootattributeoperation';
 import MergeOperation from './mergeoperation';
 import SplitOperation from './splitoperation';
 import WrapOperation from './wrapoperation';
 import UnwrapOperation from './unwrapoperation';
 import NoOperation from './nooperation';
 import Range from '../range';
+import Position from '../position';
 import compareArrays from '@ckeditor/ckeditor5-utils/src/comparearrays';
 
 const transformations = new Map();
@@ -65,13 +67,13 @@ function noUpdateTransformation( a ) {
 
 function updateBaseVersions( operations, baseVersion ) {
 	for ( const operation of operations ) {
-		operation.baseVersion = baseVersion++;
+		operation.baseVersion = ++baseVersion;
 	}
 
 	return operations;
 }
 
-function transform( a, b, context ) {
+function transform( a, b, context = { isStrong: false } ) {
 	const transformationFunction = getTransformation( a, b );
 
 	const aTransformed = transformationFunction( a.clone(), b, context );
@@ -85,6 +87,34 @@ function getNoOp() {
 	return [ new NoOperation( 0 ) ];
 }
 
+function _onSameLevel( aPos, bPos ) {
+	const aParentPath = aPos.getParentPath();
+	const bParentPath = bPos.getParentPath();
+
+	return compareArrays( aParentPath, bParentPath ) == 'same';
+}
+
+function _splitRangeByRange( rangeToSplit, otherRange, includeCommon ) {
+	const ranges = rangeToSplit.getDifference( otherRange );
+	const common = includeCommon ? rangeToSplit.getIntersection( otherRange ) : null;
+
+	if ( common ) {
+		if ( ranges.length == 0 ) {
+			ranges.push( common );
+		} else if ( ranges.length == 1 ) {
+			if ( ranges[ 0 ].start.isBefore( common.start ) ) {
+				ranges.push( common );
+			} else {
+				ranges.unshift( common );
+			}
+		} else {
+			ranges.splice( 1, 0, common );
+		}
+	}
+
+	return ranges;
+}
+
 // -----------------------
 
 setTransformation( AttributeOperation, AttributeOperation, ( a, b, context ) => {
@@ -93,7 +123,7 @@ setTransformation( AttributeOperation, AttributeOperation, ( a, b, context ) => 
 
 		// First, we want to apply change to the part of a range that has not been changed by the other operation.
 		const operations = a.range.getDifference( b.range ).map( range => {
-			return new AttributeOperation( range, a.key, a.oldValue, a.newValue, a.baseVersion );
+			return new AttributeOperation( range, a.key, a.oldValue, a.newValue, 0 );
 		} );
 
 		// Then we take care of the common part of ranges.
@@ -104,7 +134,7 @@ setTransformation( AttributeOperation, AttributeOperation, ( a, b, context ) => 
 			// original range that has already been changed by the other operation. Since that range
 			// got changed we also have to update `oldValue`.
 			if ( context.isStrong ) {
-				operations.push( new AttributeOperation( common, b.key, b.newValue, a.newValue, a.baseVersion ) );
+				operations.push( new AttributeOperation( common, b.key, b.newValue, a.newValue, 0 ) );
 			} else if ( operations.length === 0 ) {
 				operations.push( new NoOperation( 0 ) );
 			}
@@ -118,44 +148,197 @@ setTransformation( AttributeOperation, AttributeOperation, ( a, b, context ) => 
 } );
 
 setTransformation( AttributeOperation, InsertOperation, ( a, b ) => {
-	// Transform this operation's range.
-	// in old transformations there were an additional attribute operation, maybe it is needed
-	const ranges = a.range._getTransformedByInsertion( b.position, b.howMany, !b.shouldReceiveAttributes );
+	const ranges = a.range._getTransformedByInsertion( b.position, b.howMany, true );
 
-	// Map transformed range(s) to operations and return them.
-	// not sure why or if the reverse is needed here
-	return ranges.reverse().map( range => {
+	// Create `AttributeOperation`s out of the ranges.
+	const result = ranges.map( range => {
 		return new AttributeOperation( range, a.key, a.oldValue, a.newValue, a.baseVersion );
 	} );
+
+	// Case 1:	`AttributeOperation#range` includes some newly inserted text.
+	//			The operation should also change the attribute of that text.
+	//
+	//			Bold should be applied on the following range:
+	//			<p>Fo[zb]ar</p>
+	//
+	//			New text is typed:
+	//			<p>Fozxxbar</p>
+	//
+	//			Bold should be applied also on the new text:
+	//			<p>Fo<$text bold=true>zxxb</$text>ar</p>
+	//
+	//			Keep in mind that this is should not work the same for elements.
+	//
+	//			Instead of expanding the attribute operation range, it is needed to create a new attribute operation.
+	//			This is because the inserted text might have already an attribute applied and the `oldValue` property
+	//			of the attribute operation might be wrong:
+	//
+	//			Attribute `highlight="yellow"` should be applied on the following range:
+	//			<p>Fo[zb]ar<p>
+	//
+	//			New text with `highlight="red"` is typed:
+	//			<p>Fo[z<$text higlight="red">x</$text>a]r</p>
+	//
+	//			In this case three operations are needed: `oldValue=null, newValue="yellow"` for `z`, `oldValue="red",
+	//			newValue="yellow"` for `x` and `oldValue=null, newValue="yellow"` for `a`. It could even happen that
+	//			there are multiple nodes with different `oldValue`s are inserted, so multiple new operations might be added.
+	//
+	if ( b.shouldReceiveAttributes && _onSameLevel( a.range.start, b.position ) && a.range.containsPosition( b.position ) ) {
+		// Put the new operations in between the other two ranges.
+		result.splice( 1, 0, ..._getComplementaryAttributeOperations( a, b ) );
+	}
+
+	// Map transformed range(s) to operations and return them.
+	return result;
 } );
 
+function _getComplementaryAttributeOperations( attributeOperation, insertOperation ) {
+	const nodes = insertOperation.nodes;
+	const result = [];
+
+	// At the beginning we store the attribute value from the first node.
+	let val = nodes.getNode( 0 ).getAttribute( attributeOperation.key );
+
+	// This stores the last index of node list where the attribute value has changed.
+	// We need it to create separate `AttributeOperation`s for nodes with different attribute values.
+	let lastOffset = 0;
+
+	// Sum of offsets of already processed nodes.
+	let offsetSum = nodes.getNode( 0 ).offsetSize;
+
+	for ( let i = 1; i < nodes.length; i++ ) {
+		const node = nodes.getNode( i );
+		const nodeAttrVal = node.getAttribute( attributeOperation.key );
+
+		// If previous node has different attribute value, we will create an operation to the point before current node.
+		// So all nodes with the same attributes up to this point will be included in one `AttributeOperation`.
+		if ( nodeAttrVal != val ) {
+			// New operation is created only when it is needed. If given node already has proper value for this
+			// attribute we simply skip it without adding a new operation.
+			if ( val != attributeOperation.newValue ) {
+				addOperation();
+			}
+
+			val = nodeAttrVal;
+			lastOffset = offsetSum;
+		}
+
+		offsetSum = offsetSum + node.offsetSize;
+	}
+
+	// At the end we have to add additional `AttributeOperation` for the last part of node list.
+	// If all nodes on the node list had same attributes, this will be the only returned operation.
+	addOperation();
+
+	return result;
+
+	function addOperation() {
+		const range = new Range(
+			insertOperation.position.getShiftedBy( lastOffset ),
+			insertOperation.position.getShiftedBy( offsetSum )
+		);
+
+		result.push(
+			new AttributeOperation( range, attributeOperation.key, val, attributeOperation.newValue, 0 )
+		);
+	}
+}
+
 setTransformation( AttributeOperation, MergeOperation, ( a, b ) => {
-	// probably should prevent adding attributes on wrong nodes
-	// maybe attribute ranges should be flat too?
 	a.range = a.range._getTransformedByMergeOperation( b );
 
 	return [ a ];
 } );
 
 setTransformation( AttributeOperation, MoveOperation, ( a, b ) => {
-	const ranges = a.range._getTransformedByMoveOperation( b, false );
+	const ranges = a.range._getTransformedByMoveOperation( b, true );
 
-	// Map transformed range(s) to operations and return them.
+	// Create `AttributeOperation`s out of the ranges.
 	return ranges.map( range => {
 		return new AttributeOperation( range, a.key, a.oldValue, a.newValue, a.baseVersion );
 	} );
 } );
 
 setTransformation( AttributeOperation, SplitOperation, ( a, b ) => {
-	// probably should prevent adding attributes on wrong nodes
-	// if changed node is split, changed both nodes
+	// Case 1:	Split node is the last node in `AttributeOperation#range`.
+	//			`AttributeOperation#range` needs to be expanded to include the new (split) node.
+	//
+	//			<listItem type="bulleted">foobar</listItem>
+	//
+	//			After split:
+	//			<listItem type="bulleted">foo</listItem><listItem type="bulleted">bar</listItem>
+	//
+	//			After attribute change:
+	//			<listItem type="numbered">foo</listItem><listItem type="numbered">foo</listItem>
+	//
+	if ( a.range.end.isEqual( b.insertionPosition ) ) {
+		a.range.end.offset++;
+
+		return [ a ];
+	}
+
+	// Case 2:	Split is inside `AttributeOperation#range` but the parent is not inside that range.
+	//			Transformed attribute operation should not include the element created by split.
+	//
+	//			Content with range-to-change and split position:
+	//			<p>Fo[zb^a]r</p>
+	//
+	//			After split:
+	//			<p>Fo[zb</p><p>a]r</p>
+	//
+	//			Transformed range contains the new element. This is wrong. It should be like this:
+	//			<p>Fo[zb]</p><p>[a]r</p>
+	//
+	if ( _onSameLevel( a.range.start, b.position ) && a.range.containsPosition( b.position ) ) {
+		const secondPart = a.clone();
+
+		secondPart.range.start = Position.createFromPosition( b.moveTargetPosition );
+		secondPart.range.end = a.range.end._getCombined( b.position, b.moveTargetPosition );
+
+		a.range.end = Position.createFromPosition( b.position );
+
+		return [ a, secondPart ];
+	}
+
+	// The default case.
+	//
 	a.range = a.range._getTransformedBySplitOperation( b );
 
 	return [ a ];
 } );
 
 setTransformation( AttributeOperation, WrapOperation, ( a, b ) => {
-	// probably should prevent adding attributes on wrong nodes
+	// Case 1:	`AttributeOperation#range` and range to wrap intersect only partially.
+	//			Two `AttributeOperation`s are needed to handle this situation as, after wrapping, the nodes
+	//			to change are in different parents.
+	//
+	//			Both list items' type should be changed to numbered:
+	//			[<listItem type="bulleted">Foo</listItem><listItem type="bulleted">Bar</listItem>]
+	//
+	//			Wrap one of the items inside block quote:
+	//			<blockQuote><listItem type="bulleted">Foo</listItem></blockQuote><listItem type="bulleted">Bar</listItem>
+	//
+	//			Two operations are needed:
+	//			<blockQuote>[<listItem type="bulleted">Foo</listItem>]</blockQuote>[<listItem type="bulleted">Bar</listItem>]
+	//
+	//			There might be three ranges needed, if the attribute operation range started before and ended after the wrap range.
+	//
+	if ( _onSameLevel( a.range.start, b.position ) ) {
+		const ranges = a.range.getDifference( b.wrappedRange );
+		const common = a.range.getIntersection( b.wrappedRange );
+
+		if ( common ) {
+			ranges.push( common );
+		}
+
+		// Create `AttributeOperation`s out of the ranges.
+		return ranges.map( range => {
+			return new AttributeOperation( range._getTransformedByWrapOperation( b ), a.key, a.oldValue, a.newValue, 0 );
+		} );
+	}
+
+	// The default case.
+	//
 	a.range = a.range._getTransformedByWrapOperation( b );
 
 	return [ a ];
@@ -173,24 +356,28 @@ setTransformation( InsertOperation, AttributeOperation, ( a, b ) => {
 	const result = [ a ];
 
 	if ( a.shouldReceiveAttributes && b.range.containsPosition( a.position ) ) {
-		const insertedRange = Range.createFromPositionAndShift( a.position, a.howMany );
-
-		result.push(
-			new AttributeOperation( insertedRange, b.key, b.oldValue, b.newValue, 0 )
-		);
+		result.push( ..._getComplementaryAttributeOperations( b, a ) );
 	}
 
 	return result;
 } );
 
 setTransformation( InsertOperation, InsertOperation, ( a, b, context ) => {
-	a.position = a.position._getTransformedByInsertOperation( b /*, ???*/ ); // needs insert before
+	if ( a.position.isEqual( b.position ) && context.isStrong ) {
+		return [ a ];
+	}
+
+	a.position = a.position._getTransformedByInsertOperation( b );
 
 	return [ a ];
 } );
 
 setTransformation( InsertOperation, MoveOperation, ( a, b, context ) => {
-	a.position = a.position._getTransformedByMoveOperation( b, false /*, ???*/ ); // needs insert before
+	if ( a.position.isEqual( b.targetPosition ) && context.isStrong ) {
+		return [ a ];
+	}
+
+	a.position = a.position._getTransformedByMoveOperation( b );
 
 	return [ a ];
 } );
@@ -238,8 +425,7 @@ setTransformation( MarkerOperation, MarkerOperation, ( a, b, context ) => {
 		if ( context.isStrong ) {
 			a.oldRange = Range.createFromRange( b.newRange );
 		} else {
-			// NoOp.
-			a.newRange = Range.createFromRange( b.newRange );
+			return getNoOp();
 		}
 	}
 
@@ -260,11 +446,11 @@ setTransformation( MarkerOperation, MergeOperation, ( a, b ) => {
 
 setTransformation( MarkerOperation, MoveOperation, ( a, b ) => {
 	if ( a.oldRange ) {
-		a.oldRange = Range.createFromRanges( a.oldRange._getTransformedByMoveOperation( b, true ) );
+		a.oldRange = Range.createFromRanges( a.oldRange._getTransformedByMoveOperation( b ) );
 	}
 
 	if ( a.newRange ) {
-		a.newRange = Range.createFromRanges( a.newRange._getTransformedByMoveOperation( b, true ) );
+		a.newRange = Range.createFromRanges( a.newRange._getTransformedByMoveOperation( b ) );
 	}
 
 	return [ a ];
@@ -318,8 +504,12 @@ setTransformation( MergeOperation, InsertOperation, ( a, b ) => {
 setTransformation( MergeOperation, MergeOperation, ( a, b ) => {
 	// same merge source and target position -- no op
 	// same merge source position different target position special case -- only one merge applies use is strong
-
 	a.sourcePosition = a.sourcePosition._getTransformedByMergeOperation( b );
+
+	// if ( a.sourcePosition.isEqual( b.sourcePosition ) && !a.targetPosition.isEqual( b.targetPosition ) ) {
+	//
+	// }
+
 	a.targetPosition = a.targetPosition._getTransformedByMergeOperation( b );
 
 	return [ a ];
@@ -327,6 +517,9 @@ setTransformation( MergeOperation, MergeOperation, ( a, b ) => {
 
 setTransformation( MergeOperation, MoveOperation, ( a, b ) => {
 	// remove special case -- if right-side merge was removed, dont bring it back
+	// if ( b instanceof RemoveOperation && b.containsPosition( a.sourcePosition ) ) {
+	//
+	// }
 
 	a.sourcePosition = a.sourcePosition._getTransformedByMoveOperation( b );
 	a.targetPosition = a.targetPosition._getTransformedByMoveOperation( b );
@@ -342,8 +535,6 @@ setTransformation( MergeOperation, SplitOperation, ( a, b ) => {
 } );
 
 setTransformation( MergeOperation, WrapOperation, ( a, b ) => {
-	// what about a case when sourceposition parent is wrapped?
-
 	a.sourcePosition = a.sourcePosition._getTransformedByWrapOperation( b );
 	a.targetPosition = a.targetPosition._getTransformedByWrapOperation( b );
 
@@ -367,13 +558,108 @@ setTransformation( MoveOperation, InsertOperation, ( a, b, context ) => {
 
 	a.sourcePosition = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
-	a.targetPosition = a.targetPosition._getTransformedByInsertOperation( b /*, ???*/ ); // needs insert before ?
+
+	if ( !a.targetPosition.isEqual( b.position ) || !context.isStrong ) {
+		a.targetPosition = a.targetPosition._getTransformedByInsertOperation( b );
+	}
 
 	return [ a ];
 } );
 
+// setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
+// 	const rangeA = Range.createFromPositionAndShift( a.sourcePosition, a.howMany );
+// 	const rangeB = Range.createFromPositionAndShift( b.sourcePosition, b.howMany );
+//
+// 	let isStrong = context.isStrong;
+//
+// 	if ( !( a instanceof RemoveOperation ) && b instanceof RemoveOperation ) {
+// 		isStrong = false;
+// 	}
+//
+// 	let newTargetPosition = a.targetPosition._getTransformedByMoveOperation( b );
+//
+// 	if ( a.targetPosition.isEqual( b.targetPosition ) && context.isStrong ) {
+// 		// By default move transformation will move the position to the right if positions are same.
+// 		// So if the positions are same but `a` operation is stronger, we need to re-move it before the nodes inserted by `b` operation.
+// 		newTargetPosition = newTargetPosition.getShiftedBy( -b.howMany );
+// 	}
+//
+// 	// Case 1:	Very edgy case where both operations target inside the other operation range.
+// 	//			Just reverse the operations like they did not happen.
+// 	//
+// 	if ( moveTargetIntoMovedRange( a, b ) && moveTargetIntoMovedRange( b, a ) ) {
+// 		return [ b.getReversed() ];
+// 	}
+//
+// 	// Case 2:	Ranges are same. Depending on which is stronger, the operation should become no-operation.
+// 	if ( rangeA.isEqual( rangeB ) && !context.isStrong ) {
+// 		return getNoOp();
+// 	}
+//
+// 	// Case 3:	Ranges to move are not on the same level, so those operations don't move the same nodes. This is an
+// 	//			easy situation to solve. Operation `a` range might have moved but is kept together.
+// 	//
+// 	if ( !_onSameLevel( a.sourcePosition, b.sourcePosition ) ) {
+// 		const newRange = rangeA._getTransformedByMoveOperation( b )[ 0 ];
+//
+// 		a.sourcePosition = newRange.start;
+// 		a.howMany = newRange.end.offset - newRange.start.offset;
+// 		a.targetPosition = newTargetPosition;
+//
+// 		return [ a ];
+// 	}
+//
+// 	// Case 4:	Ranges are on the same level. In this case the ranges may intersect. Two ranges-to-move might
+// 	//			need to be generated. For example, if some nodes in operation `a` range were moved by operation `b`,
+// 	//			if operation `a` is stronger, the nodes need to be moved again to the operation `a` target position.
+// 	//
+// 	let common = rangeA.getIntersection( rangeB );
+// 	const differenceSet = rangeA.getDifference( rangeB );
+//
+// 	const moveCommonPart = isStrong || rangeB.containsPosition( a.targetPosition );
+//
+// 	if ( common && differenceSet.length == 1 && !rangeA.containsPosition( b.targetPosition ) && moveCommonPart ) {
+// 		let difference = differenceSet[ 0 ]._getTransformedByMoveOperation( b )[ 0 ];
+//
+// 		common = common._getTransformedByMoveOperation( b )[ 0 ];
+//
+// 		if ( rangeA.start.isBefore( rangeB.start ) ) {
+// 			// Difference part was before common part in the original range.
+// 			const differenceOp = makeMoveOperation( difference, newTargetPosition );
+//
+// 			const commonOp = makeMoveOperation(
+// 				common._getTransformedByMoveOperation( differenceOp )[ 0 ],
+// 				newTargetPosition._getTransformedByMoveOperation( differenceOp )
+// 			);
+//
+// 			return [ differenceOp, commonOp ];
+// 		} else {
+// 			// Common part was before difference part in the original range.
+// 			const commonOp = makeMoveOperation( common, newTargetPosition );
+//
+// 			const differenceOp = makeMoveOperation(
+// 				difference._getTransformedByMoveOperation( commonOp )[ 0 ],
+// 				newTargetPosition._getTransformedByMoveOperation( commonOp )
+// 			);
+//
+// 			return [ commonOp, differenceOp ];
+// 		}
+// 	}
+//
+// 	// Case 5:	Ranges are on the same level but are not intersecting in a conflicting way.
+// 	//
+// 	const newRange = rangeB.containsRange( rangeA, true ) ?
+// 		rangeA._getTransformedByMoveOperation( b )[ 0 ] :
+// 		rangeA._getTransformedByDeletion( b.sourcePosition, b.howMany )._getTransformedByMoveOperation( b )[ 0 ];
+//
+// 	a.sourcePosition = newRange.start;
+// 	a.howMany = newRange.end.offset - newRange.start.offset;
+// 	a.targetPosition = newTargetPosition;
+//
+// 	return [ a ];
+// } );
+
 setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
-	// research this again
 	//
 	// Setting and evaluating some variables that will be used in special cases and default algorithm.
 	//
@@ -385,21 +671,11 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 	// this algorithm and we do not want to override original `context.isStrong` that will be used in later transformations.
 	let isStrong = context.isStrong;
 
-	// Whether range moved by operation `b` is includable in operation `a` move range.
-	// For this, `a` operation has to be sticky (so `b` sticks to the range) and context has to allow stickiness.
-	const includeB = a.isSticky && !context.forceNotSticky;
-
-	// Evaluate new target position for transformed operation.
-	// Check whether there is a forced order of nodes or use `isStrong` flag for conflict resolving.
-	const insertBefore = context.insertBefore === undefined ? !isStrong : context.insertBefore;
-
 	// `a.targetPosition` could be affected by the `b` operation. We will transform it.
 	const newTargetPosition = a.targetPosition._getTransformedByMove(
 		b.sourcePosition,
 		b.targetPosition,
-		b.howMany,
-		insertBefore,
-		b.isSticky && !context.forceNotSticky
+		b.howMany
 	);
 
 	//
@@ -421,17 +697,15 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 	// Special case #2.
 	//
 	// Check if `b` operation targets inside `rangeA`. Use stickiness if possible.
-	const bTargetsToA = rangeA.containsPosition( b.targetPosition ) ||
-		( rangeA.start.isEqual( b.targetPosition ) && includeB ) ||
-		( rangeA.end.isEqual( b.targetPosition ) && includeB );
+	const bTargetsToA = rangeA.containsPosition( b.targetPosition );
 
 	// If `b` targets to `rangeA` and `rangeA` contains `rangeB`, `b` operation has no influence on `a` operation.
 	// You might say that operation `b` is captured inside operation `a`.
 	if ( bTargetsToA && rangeA.containsRange( rangeB, true ) ) {
 		// There is a mini-special case here, where `rangeB` is on other level than `rangeA`. That's why
 		// we need to transform `a` operation anyway.
-		rangeA.start = rangeA.start._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany, !includeB );
-		rangeA.end = rangeA.end._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany, includeB );
+		rangeA.start = rangeA.start._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany );
+		rangeA.end = rangeA.end._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany );
 
 		return makeMoveOperationsFromRanges( [ rangeA ], newTargetPosition, a );
 	}
@@ -439,9 +713,7 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 	//
 	// Special case #2 mirror.
 	//
-	const aTargetsToB = rangeB.containsPosition( a.targetPosition ) ||
-		( rangeB.start.isEqual( a.targetPosition ) && b.isSticky && !context.forceNotSticky ) ||
-		( rangeB.end.isEqual( a.targetPosition ) && b.isSticky && !context.forceNotSticky );
+	const aTargetsToB = rangeB.containsPosition( a.targetPosition );
 
 	if ( aTargetsToB && rangeB.containsRange( rangeA, true ) ) {
 		// `a` operation is "moved together" with `b` operation.
@@ -468,8 +740,8 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 		// Transform `rangeA` by `b` operation and make operation out of it, and that's all.
 		// Note that this is a simplified version of default case, but here we treat the common part (whole `rangeA`)
 		// like a one difference part.
-		rangeA.start = rangeA.start._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany, !includeB );
-		rangeA.end = rangeA.end._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany, includeB );
+		rangeA.start = rangeA.start._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany );
+		rangeA.end = rangeA.end._getTransformedByMove( b.sourcePosition, b.targetPosition, b.howMany );
 
 		return makeMoveOperationsFromRanges( [ rangeA ], newTargetPosition, a );
 	}
@@ -486,12 +758,10 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 	// If only one of operations is a remove operation, we force remove operation to be the "stronger" one
 	// to provide more expected results. This is done only if `context.forceWeakRemove` is set to `false`.
 	// `context.forceWeakRemove` is set to `true` in certain conditions when transformation takes place during undo.
-	if ( !context.forceWeakRemove ) {
-		if ( a instanceof RemoveOperation && !( b instanceof RemoveOperation ) ) {
-			isStrong = true;
-		} else if ( !( a instanceof RemoveOperation ) && b instanceof RemoveOperation ) {
-			isStrong = false;
-		}
+	if ( a instanceof RemoveOperation && !( b instanceof RemoveOperation ) ) {
+		isStrong = true;
+	} else if ( !( a instanceof RemoveOperation ) && b instanceof RemoveOperation ) {
+		isStrong = false;
 	}
 
 	// Handle operation's source ranges - check how `rangeA` is affected by `b` operation.
@@ -509,7 +779,7 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 
 		// If `b` operation targets into `rangeA` on the same level, spread `rangeA` into two ranges.
 		const shouldSpread = compareArrays( range.start.getParentPath(), b.getMovedRangeStart().getParentPath() ) == 'same';
-		const newRanges = range._getTransformedByInsertion( b.getMovedRangeStart(), b.howMany, shouldSpread, includeB );
+		const newRanges = range._getTransformedByInsertion( b.getMovedRangeStart(), b.howMany, shouldSpread );
 
 		ranges.push( ...newRanges );
 	}
@@ -556,15 +826,62 @@ setTransformation( MoveOperation, MoveOperation, ( a, b, context ) => {
 } );
 
 setTransformation( MoveOperation, SplitOperation, ( a, b ) => {
-	// needs preventing from creating non-flat ranges
-	// what if split removed
-
+	// Case 1:	Last element in the moved range got split.
+	//			In this case the default range transformation will not work correctly as the element created by
+	//			split operation would be outside the range. The range to move needs to be fixed manually.
+	//
+	//			Note that there is no need to update target position in this case because split cannot influence it
+	//			in any way if it is inside the range to move.
+	//
 	const moveRange = Range.createFromPositionAndShift( a.sourcePosition, a.howMany );
+
+	if ( moveRange.end.isEqual( b.insertionPosition ) ) {
+		a.howMany++;
+
+		return [ a ];
+	}
+
+	const newTargetPosition = a.targetPosition._getTransformedBySplitOperation( b );
+
+	// Case 2:	Split happened between the moved nodes. In this case two ranges to move need to be generated.
+	//
+	//			Characters `ozba` are moved to the end of paragraph `Xyz` but split happened.
+	//			<p>F[oz|ba]r</p><p>Xyz</p>
+	//
+	//			After split:
+	//			<p>F[oz</p><p>ba]r</p><p>Xyz</p>
+	//
+	//			Correct ranges:
+	//			<p>F[oz]</p><p>[ba]r</p><p>Xyz</p>
+	//
+	//			After move:
+	//			<p>F</p><p>r</p><p>Xyzozba</p>
+	//
+	if ( _onSameLevel( moveRange.start, b.position ) && moveRange.containsPosition( b.position ) ) {
+		let rightRange = new Range( b.position, moveRange.end );
+		rightRange = rightRange._getTransformedBySplitOperation( b );
+
+		// Add the right range first, so that if both ranges are inserted at `newTargetPosition`, they are in the correct order.
+		//
+		// Target position is ^:
+		//
+		// <p>F[oz]</p><p>[ba]r</p><p>Xyz^</p>
+		// <p>F[oz]</p><p>r</p><p>Xyz^ba</p>
+		// <p>F</p><p>r</p><p>Xyzozba</p>
+		//
+		return [
+			new MoveOperation( rightRange.start, rightRange.end.offset - rightRange.start.offset, newTargetPosition, 0 ),
+			new MoveOperation( moveRange.start, b.position.offset - moveRange.start.offset, newTargetPosition, 0 )
+		];
+	}
+
+	// The default case.
+	//
 	const transformed = moveRange._getTransformedBySplitOperation( b );
 
 	a.sourcePosition = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
-	a.targetPosition = a.targetPosition._getTransformedBySplitOperation( b );
+	a.targetPosition = newTargetPosition;
 
 	return [ a ];
 } );
@@ -575,20 +892,62 @@ setTransformation( MoveOperation, MergeOperation, ( a, b ) => {
 
 	a.sourcePosition = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
-	a.targetPosition = a.targetPosition._getTransformedByUnwrapOperation( b );
+	a.targetPosition = a.targetPosition._getTransformedByMergeOperation( b );
 
 	return [ a ];
 } );
 
 setTransformation( MoveOperation, WrapOperation, ( a, b ) => {
-	// needs preventing from creating non-flat ranges
-
 	const moveRange = Range.createFromPositionAndShift( a.sourcePosition, a.howMany );
-	const transformed = moveRange._getTransformedByWrapOperation( b );
+	const newTargetPosition = a.targetPosition._getTransformedBySplitOperation( b );
+
+	// Case 1:	Some of the nodes to move got wrapped. In this case multiple ranges to move might need to be generated.
+	//
+	//			First paragraph and the image should are wrapped, while the two images are moved after the last paragraph:
+	//			[<paragraph>Foo</paragraph>{<image />]<image />}<paragraph>Bar</paragraph>
+	//
+	//			After wrap:
+	//			<blockQuote><paragraph>Foo</paragraph>[<image />]</blockQuote>[<image />]<paragraph>Bar</paragraph>
+	//
+	//			After move:
+	//			<blockQuote><paragraph>Foo</paragraph></blockQuote><paragraph>Bar</paragraph><image /><image />
+	//
+	if ( _onSameLevel( a.sourcePosition, b.position ) ) {
+		// If move range contains or is equal to the wrapped range, just move it all together.
+		// Change `howMany` to reflect that nodes got wrapped.
+		if ( moveRange.containsRange( b.wrappedRange, true ) ) {
+			a.howMany = a.howMany - b.howMany + 1;
+
+			return [ a ];
+		}
+
+		const result = [];
+
+		let difference = moveRange.getDifference( b.wrappedRange )[ 0 ];
+		let common = moveRange.getIntersection( b.wrappedRange );
+
+		if ( difference ) {
+			difference = difference._getTransformedByWrapOperation( b );
+
+			result.push( new MoveOperation( difference.start, difference.end.offset - difference.start.offset, newTargetPosition, 0 ) );
+		}
+
+		if ( common ) {
+			common = common._getTransformedByWrapOperation( b );
+
+			result.push( new MoveOperation( common.start, common.end.offset - common.start.offset, newTargetPosition, 0 ) );
+		}
+
+		return result;
+	}
+
+	// The default case.
+	//
+	const transformed = moveRange._getTransformedByMergeOperation( b );
 
 	a.sourcePosition = transformed.start;
 	a.howMany = transformed.end.offset - transformed.start.offset;
-	a.targetPosition = a.targetPosition._getTransformedByWrapOperation( b );
+	a.targetPosition = newTargetPosition;
 
 	return [ a ];
 } );
@@ -629,8 +988,7 @@ setTransformation( RenameOperation, RenameOperation, ( a, b, context ) => {
 		if ( context.isStrong ) {
 			a.oldName = b.newName;
 		} else {
-			// NoOp.
-			a.newName = b.newName;
+			return getNoOp();
 		}
 	}
 
@@ -638,15 +996,42 @@ setTransformation( RenameOperation, RenameOperation, ( a, b, context ) => {
 } );
 
 setTransformation( RenameOperation, SplitOperation, ( a, b ) => {
-	// if split node is renamed, rename both
+	// Case 1:	The element to rename has been split. In this case, the new element should be also renamed.
+	//
+	//			This element should be renamed:
+	//			<paragraph>Foobar</paragraph>
+	//
+	//			After split:
+	//			<paragraph>Foo</paragraph><paragraph>bar</paragraph>
+	//
+	//			Rename both elements:
+	//			<listItem>Foo</listItem><listItem>bar</listItem>
+	//
+	const renamePath = a.position.path;
+	const splitPath = b.position.getParentPath();
 
+	if ( compareArrays( renamePath, splitPath ) == 'same' ) {
+		const extraRename = new RenameOperation( a.position.getShiftedBy( 1 ), a.oldName, a.newName, 0 );
+
+		return [ a, extraRename ];
+	}
+
+	// The default case.
+	//
 	a.position = a.position._getTransformedBySplitOperation( b );
 
 	return [ a ];
 } );
 
 setTransformation( RenameOperation, MergeOperation, ( a, b ) => {
-	// if merge node is renamed, cancel rename (?)
+	// Case 1:	The renamed element got merged. Cancel the rename.
+	//
+	const aPath = a.position.path;
+	const bPath = b.sourcePosition.getParentPath();
+
+	if ( compareArrays( aPath, bPath ) == 'same' ) {
+		return getNoOp();
+	}
 
 	a.position = a.position._getTransformedByMergeOperation( b );
 
@@ -660,13 +1045,41 @@ setTransformation( RenameOperation, WrapOperation, ( a, b ) => {
 } );
 
 setTransformation( RenameOperation, UnwrapOperation, ( a, b ) => {
-	// if unwrapped node is renamed, cancel rename (?)
+	// Case 1:	The renamed element got unwrapped. Cancel the rename.
+	//
+	const aPath = a.position.path;
+	const bPath = b.position.getParentPath();
+
+	if ( compareArrays( aPath, bPath ) == 'same' ) {
+		return getNoOp();
+	}
+
 	a.position = a.position._getTransformedByUnwrapOperation( b );
 
 	return [ a ];
 } );
 
 // -----------------------
+
+setTransformation( RootAttributeOperation, RootAttributeOperation, ( a, b, context ) => {
+	if ( a.root === b.root && a.key === b.key ) {
+		if ( !context.isStrong || a.newValue === b.newValue ) {
+			return [ new NoOperation( 0 ) ];
+		} else {
+			a.oldValue = b.newValue;
+		}
+	}
+
+	return [ a ];
+} );
+
+// -----------------------
+
+setTransformation( SplitOperation, AttributeOperation, ( a, b ) => {
+	// if last element from attribute range is split, include it in attribute change
+	// mirror case 2?
+	return [ a ];
+} );
 
 setTransformation( SplitOperation, InsertOperation, ( a, b ) => {
 	a.position = a.position._getTransformedByInsertOperation( b );
@@ -681,17 +1094,42 @@ setTransformation( SplitOperation, MergeOperation, ( a, b ) => {
 } );
 
 setTransformation( SplitOperation, MoveOperation, ( a, b ) => {
-	// what if split position is moved? or removed
+	// Case 1:	If the split position is inside the moved range, we need to move the split position to a proper place.
+	//			The position cannot be moved together with moved range because that would result in splitting an incorrect element.
+	//
+	//			Characters `bc` should be moved to the second paragraph while split position is between them:
+	//			<paragraph>A[b|c]d</paragraph><paragraph>Xyz</paragraph>
+	//
+	//			After move, new split position is incorrect:
+	//			<paragraph>Ad</paragraph><paragraph>Xb|cyz</paragraph>
+	//
+	//			Correct split position:
+	//			<paragraph>A|d</paragraph><paragraph>Xbcyz</paragraph>
+	//
+	//			After split:
+	//			<paragraph>A</paragraph><paragraph>d</paragraph><paragraph>Xbcyz</paragraph>
+	//
+	const rangeToMove = Range.createFromPositionAndShift( b.sourcePosition, b.howMany );
+
+	if ( _onSameLevel( a.position, b.sourcePosition ) && rangeToMove.containsPosition( a.position ) ) {
+		a.position = Position.createFromPosition( b.sourcePosition );
+
+		return [ a ];
+	}
+
+	// The default case.
+	//
 	a.position = a.position._getTransformedByMoveOperation( b );
 
 	return [ a ];
 } );
 
-setTransformation( SplitOperation, SplitOperation, ( a, b ) => {
-	if ( a.position.isEqual( b.position ) ) {
-		// could possible be a noop but then it screws up ot
-	}
+setTransformation( SplitOperation, RenameOperation, ( a, b ) => {
+	// mirror case
+	return [ a ];
+} );
 
+setTransformation( SplitOperation, SplitOperation, ( a, b ) => {
 	a.position = a.position._getTransformedBySplitOperation( b );
 
 	return [ a ];
@@ -699,6 +1137,7 @@ setTransformation( SplitOperation, SplitOperation, ( a, b ) => {
 
 setTransformation( SplitOperation, WrapOperation, ( a, b ) => {
 	// cancel split if nodes got wrapped
+	// if last element from wrap range is split, include it in wrap
 
 	a.position = a.position._getTransformedByWrapOperation( b );
 
@@ -734,18 +1173,45 @@ setTransformation( WrapOperation, MergeOperation, ( a, b ) => {
 } );
 
 setTransformation( WrapOperation, MoveOperation, ( a, b ) => {
-	// move contains some wrapped nodes: it should probably somehow use context + have a mirror scenario
-	const transformed = a.wrappedRange._getTransformedByMoveOperation( b, false );
-	const result = Range.createFromRanges( transformed ); // is this 100% correct
+	// Case 1:	The nodes to wrap are in the same parent as the moved range.
+	//			In this case, only nodes that has not been moved should be wrapped.
+	//
+	//			First paragraph and the image should be wrapped, but the image is moved away (or removed).
+	//			[<paragraph>Foo</paragraph><image />]<paragraph>Bar</paragraph>
+	//
+	//			Wrap only the remaining paragraph:
+	//			[<paragraph>Foo</paragraph>]<paragraph>Bar</paragraph>
+	//
+	//			After wrap:
+	//			<blockQuote><paragraph>Foo</paragraph></blockQuote><paragraph>Bar</paragraph>
+	//
+	if ( _onSameLevel( a.position, b.sourcePosition ) ) {
+		const moveRange = Range.createFromPositionAndShift( b.sourcePosition, b.howMany );
+		const remainingRange = a.wrappedRange._getTransformedByDeletion( moveRange );
 
-	a.position = result.start;
-	a.howMany = result.end.offset - result.start.offset;
+		if ( remainingRange ) {
+			const range = remainingRange._getTransformedByInsertion( b.getMovedRangeStart, b.howMany );
+
+			a.position = range.start;
+			a.howMany = range.end.offset - range.start.offset;
+
+			return [ a ];
+		}
+	}
+
+	// The default case.
+	//
+	const range = a.wrappedRange._getTransformedByMoveOperation( b );
+
+	a.position = range.start;
+	a.howMany = range.end.offset - range.start.offset;
 
 	return [ a ];
 } );
 
 setTransformation( WrapOperation, SplitOperation, ( a, b ) => {
 	// cancel split if nodes got wrapped
+	// if last element from wrap range is split, include it in wrap
 	const transformed = a.wrappedRange._getTransformedBySplitOperation( b );
 
 	a.position = transformed.start;
@@ -754,8 +1220,85 @@ setTransformation( WrapOperation, SplitOperation, ( a, b ) => {
 	return [ a ];
 } );
 
-setTransformation( WrapOperation, WrapOperation, ( a, b ) => {
-	// what if ranges are intersecting on the same level
+setTransformation( WrapOperation, WrapOperation, ( a, b, context ) => {
+	// Case 1:	If ranges to wrap intersect on the same level then there is a conflict.
+	//			Depending on `context.isStrong` the nodes in the intersecting part should be left as they were wrapped
+	//			or moved to the new wrapping element.
+	//
+	//			`Foo` and `Bar` are to be wrapped in `blockQuote`, while `Bar` and `Xyz` in `div`.
+	//			[<paragraph>Foo</paragraph>{<paragraph>Bar</paragraph>]<paragraph>Xyz</paragraph>}
+	//
+	//			After `blockQuote` wrap:
+	//			<blockQuote>
+	//				<paragraph>Foo</paragraph><paragraph>Bar</paragraph>
+	//			</blockQuote>
+	//			<paragraph>Xyz</paragraph>
+	//
+	//			After `div` wrap:
+	//			<blockQuote>
+	//				<paragraph>Foo</paragraph><paragraph>Bar</paragraph>
+	//			</blockQuote>
+	//			<div>
+	//				<paragraph>Xyz</paragraph>
+	// 			</div>
+	//
+	//			Or, if `div` wrap is stronger:
+	//			<blockQuote>
+	//				<paragraph>Foo</paragraph>
+	//			</blockQuote>
+	//			<div>
+	//				<paragraph>Bar</paragraph><paragraph>Xyz</paragraph>
+	//			</div>
+	//
+	//			The range from incoming operation may be also wholly included in the range from operation `b`.
+	//			Then, cancel the wrapping. The same happens when the ranges are identical but in that case,
+	//			`context.isStrong` decides which wrapping should be cancelled.
+	//
+	//			Lastly, the range from operation `b` may be wholly included in the range from incoming operation.
+	//			Then, unwrap the range from operation `b` and do a wrap on full range from operation `a`.
+	//
+	if ( _onSameLevel( a.position, b.position ) ) {
+		const ranges = a.wrappedRange.getDifference( b.wrappedRange );
+
+		if ( ranges.length == 0 ) {
+			// Range from `a` is contained in range from `b` or ranges are equal.
+			if ( a.wrappedRange.isEqual( b.wrappedRange ) && context.isStrong ) {
+				// If ranges are equal and `a` is a stronger operation, reverse `b` operation and then apply `a` operation.
+				return [ b.getReversed(), a ];
+			}
+
+			// If `a` is contained in `b` or they are same but `b` is stronger, cancel operation `a`.
+			return getNoOp();
+		} else if ( ranges.length == 1 ) {
+			// Ranges intersect.
+			// First, calculate the range for the difference part (nodes included only in `a` operation).
+			const range = ranges[ 0 ]._getTransformedByWrapOperation( b );
+
+			// Then, assign transformed range to `a` operation.
+			a.position = range.start;
+			a.howMany = range.end.offset - range.start.offset;
+
+			if ( context.isStrong ) {
+				// If `a` is stronger, handle also the common part of ranges.
+				// After wrapping nodes by (transformed) `a` operation, move the other nodes to the element created by operation `a`.
+				const common = a.wrappedRange.getIntersection( b.wrappedRange )._getTransformedByWrapOperation( b );
+				const targetPosition = a.targetPosition.getShiftedBy( a.howMany );
+
+				return [
+					a,
+					new MoveOperation( common.start, common.end.offset - common.start.offset, targetPosition, 0 )
+				];
+			}
+
+			return [ a ];
+		} else {
+			// Range from `b` is contained in range from `a`. Reverse operation `b` in addition to operation `a`.
+			return [ b.getReversed(), a ];
+		}
+	}
+
+	// The default case.
+	//
 	const transformed = a.wrappedRange._getTransformedByWrapOperation( b );
 
 	a.position = transformed.start;
@@ -776,18 +1319,20 @@ setTransformation( WrapOperation, UnwrapOperation, ( a, b ) => {
 // -----------------------
 
 setTransformation( UnwrapOperation, InsertOperation, ( a, b ) => {
-	// range will change a.position stickiness -- this sucks
-	const transformed = a.unwrappedRange._getTransformedByInsertOperation( b, false )[ 0 ];
+	// Case 1:	Insert operation inserts nodes into the unwrapped element.
+	//			This does not have any impact on `UnwrapOperation#position`, but `#howMany` has to be changed.
+	//
+	if ( _onSameLevel( a.position ) && b.position ) {
+		a.howMany += b.howMany;
+	}
 
-	a.position = transformed.start;
-	a.position.stickiness = 'toPrevious';
-	a.howMany = transformed.end.offset - transformed.start.offset;
+	a.position = a.position._getTransformedByInsertOperation( b );
 
 	return [ a ];
 } );
 
 setTransformation( UnwrapOperation, MergeOperation, ( a, b ) => {
-	// unwrap both nodes if node to unwrap got merged
+	// what if node to unwrap got merged
 	const transformed = a.unwrappedRange._getTransformedByMergeOperation( b );
 
 	a.position = transformed.start;
@@ -798,12 +1343,22 @@ setTransformation( UnwrapOperation, MergeOperation, ( a, b ) => {
 } );
 
 setTransformation( UnwrapOperation, MoveOperation, ( a, b ) => {
-	const transformed = a.unwrappedRange._getTransformedByMoveOperation( b, false );
-	const result = Range.createFromRanges( transformed ); // is this 100% correct?
+	// Case 1:	Move operation moves nodes from the unwrapped element.
+	//			This does not have any impact on `UnwrapOperation#position`, but `#howMany` has to be changed.
+	//
+	if ( _onSameLevel( a.position ) && b.sourcePosition ) {
+		a.howMany -= b.howMany;
+	}
 
-	a.position = result.start;
-	a.position.stickiness = 'toPrevious';
-	a.howMany = result.end.offset - result.start.offset;
+	// Case 2:	Move operation moves nodes into the unwrapped element.
+	//			This does not have any impact on `UnwrapOperation#position`, but `#howMany` has to be changed.
+	//			Note, that case 1 and case 2 may happen together.
+	//
+	if ( _onSameLevel( a.position ) && b.targetPosition ) {
+		a.howMany += b.howMany;
+	}
+
+	a.position = a.position._getTransformedByMoveOperation( b );
 
 	return [ a ];
 } );
@@ -820,29 +1375,27 @@ setTransformation( UnwrapOperation, SplitOperation, ( a, b ) => {
 } );
 
 setTransformation( UnwrapOperation, WrapOperation, ( a, b ) => {
-	if ( a.position.isEqual( b.targetPosition ) ) {
-		a.howMany += b.howMany;
+	// Case 1:	Wrapping took place inside the element to unwrap. `UnwrapOperation#howMany` needs to be updated.
+	//
+	if ( _onSameLevel( a.position, b.position ) ) {
+		a.howMany = a.howMany - b.howMany + 1;
 	}
 
+	// The default case.
+	//
 	a.position = a.position._getTransformedByWrapOperation( b );
-	a.position.stickiness = 'toPrevious';
 
 	return [ a ];
 } );
 
 setTransformation( UnwrapOperation, UnwrapOperation, ( a, b ) => {
+	// Case 1:	Operations unwrap the same element.
+	//
 	if ( a.position.isEqual( b.position ) ) {
-		// NoOp.
 		a.howMany = 0;
-
-		return [ a ];
 	}
 
-	const transformed = a.unwrappedRange._getTransformedByUnwrapOperation( b );
-
-	a.position = transformed.start;
-	a.position.stickiness = 'toPrevious';
-	a.howMany = transformed.end.offset - transformed.start.offset;
+	a.position = a.position._getTransformedByUnwrapOperation( b );
 
 	return [ a ];
 } );
@@ -892,7 +1445,7 @@ function makeMoveOperationsFromRanges( ranges, targetPosition, a ) {
 	return operations;
 }
 
-function makeMoveOperation( range, targetPosition, isSticky ) {
+function makeMoveOperation( range, targetPosition ) {
 	// We want to keep correct operation class.
 	let OperationClass;
 
@@ -910,8 +1463,6 @@ function makeMoveOperation( range, targetPosition, isSticky ) {
 		targetPosition,
 		0 // Is corrected anyway later.
 	);
-
-	result.isSticky = isSticky;
 
 	return result;
 }

@@ -354,7 +354,11 @@ export default class Writer {
 		this._assertWriterUsedCorrectly();
 
 		if ( itemOrRange instanceof Range ) {
-			setAttributeOnRange( this, key, value, itemOrRange );
+			const ranges = itemOrRange.getMinimalFlatRanges();
+
+			for ( const range of ranges ) {
+				setAttributeOnRange( this, key, value, range );
+			}
 		} else {
 			setAttributeOnItem( this, key, value, itemOrRange );
 		}
@@ -391,7 +395,11 @@ export default class Writer {
 		this._assertWriterUsedCorrectly();
 
 		if ( itemOrRange instanceof Range ) {
-			setAttributeOnRange( this, key, null, itemOrRange );
+			const ranges = itemOrRange.getMinimalFlatRanges();
+
+			for ( const range of ranges ) {
+				setAttributeOnRange( this, key, null, range );
+			}
 		} else {
 			setAttributeOnItem( this, key, null, itemOrRange );
 		}
@@ -1229,6 +1237,7 @@ export default class Writer {
 // @param {*} value Attribute new value.
 // @param {module:engine/model/range~Range} range Model range on which the attribute will be set.
 function setAttributeOnRange( writer, key, value, range ) {
+	debugger;
 	const delta = new AttributeDelta();
 	const model = writer.model;
 	const doc = model.document;
@@ -1246,7 +1255,7 @@ function setAttributeOnRange( writer, key, value, range ) {
 	// Value after the currently position.
 	let valueAfter;
 
-	for ( const val of range ) {
+	for ( const val of range.getWalker( { shallow: true } ) ) {
 		valueAfter = val.item.getAttribute( key );
 
 		// At the first run of the iterator the position in undefined. We also do not have a valueBefore, but
@@ -1310,16 +1319,7 @@ function setAttributeOnItem( writer, key, value, item ) {
 
 			operation = new RootAttributeOperation( item, key, previousValue, value, version );
 		} else {
-			if ( item.is( 'element' ) ) {
-				// If we change the attribute of the element, we do not want to change attributes of its children, so
-				// the end of the range cannot be after the closing tag, it should be inside that element, before any of
-				// it's children, so the range will contain only the opening tag.
-				range = new Range( Position.createBefore( item ), Position.createFromParentAndOffset( item, 0 ) );
-			} else {
-				// If `item` is text proxy, we create a range from the beginning to the end of that text proxy, to change
-				// all characters represented by it.
-				range = new Range( Position.createBefore( item ), Position.createAfter( item ) );
-			}
+			range = new Range( Position.createBefore( item ), Position.createAfter( item ) );
 
 			const version = range.root.document ? doc.version : null;
 

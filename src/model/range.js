@@ -411,7 +411,7 @@ export default class Range {
 					case 'move':
 					case 'remove':
 					case 'reinsert':
-						result = ranges[ i ]._getTransformedByMoveOperation( operation, true );
+						result = ranges[ i ]._getTransformedByMoveOperation( operation );
 						break;
 					case 'split':
 						result = [ ranges[ i ]._getTransformedBySplitOperation( operation ) ];
@@ -497,52 +497,12 @@ export default class Range {
 	 * @protected
 	 * @returns {Array.<module:engine/model/range~Range>}
 	 */
-	_getTransformedByMoveOperation( operation, expandIfPossible = false ) {
+	_getTransformedByMoveOperation( operation, spread = false ) {
 		const sourcePosition = operation.sourcePosition;
 		const howMany = operation.howMany;
 		const targetPosition = operation.targetPosition;
 
-		if ( expandIfPossible ) {
-			const sourceRange = Range.createFromPositionAndShift( sourcePosition, howMany );
-
-			// In the example `[]` is `this` and `{}` is `sourceRange`, while `^` is move target position.
-			//
-			// Example:
-			//
-			// <p>xx</p>^<w>{<p>a[b</p>}</w><p>c]d</p>   -->   <p>xx</p><p>a[b</p><w></w><p>c]d</p>
-			// ^<p>xx</p><w>{<p>a[b</p>}</w><p>c]d</p>   -->   <p>a[b</p><p>xx</p><w></w><p>c]d</p>  // Note <p>xx</p> inclusion.
-			// <w>{<p>a[b</p>}</w>^<p>c]d</p>            -->   <w></w><p>a[b</p><p>c]d</p>
-			if (
-				( sourceRange.containsPosition( this.start ) || sourceRange.start.isEqual( this.start ) ) &&
-				this.containsPosition( sourceRange.end ) &&
-				this.end.isAfter( targetPosition )
-			) {
-				const start = this.start._getCombined( sourcePosition, targetPosition._getTransformedByDeletion( sourcePosition, howMany ) );
-				const end = this.end._getTransformedByMove( sourcePosition, targetPosition, howMany, false, false );
-
-				return [ new Range( start, end ) ];
-			}
-
-			// In the example `[]` is `this` and `{}` is `sourceRange`, while `^` is move target position.
-			//
-			// Example:
-			//
-			// <p>c[d</p><w>{<p>a]b</p>}</w>^<p>xx</p>   -->   <p>c[d</p><w></w><p>a]b</p><p>xx</p>
-			// <p>c[d</p><w>{<p>a]b</p>}</w><p>xx</p>^   -->   <p>c[d</p><w></w><p>xx</p><p>a]b</p>  // Note <p>xx</p> inclusion.
-			// <p>c[d</p>^<w>{<p>a]b</p>}</w>            -->   <p>c[d</p><p>a]b</p><w></w>
-			if (
-				( sourceRange.containsPosition( this.end ) || sourceRange.end.isEqual( this.end ) ) &&
-				this.containsPosition( sourceRange.start ) &&
-				this.start.isBefore( targetPosition )
-			) {
-				const start = this.start._getTransformedByMove( sourcePosition, targetPosition, howMany, true, false );
-				const end = this.end._getCombined( sourcePosition, targetPosition._getTransformedByDeletion( sourcePosition, howMany ) );
-
-				return [ new Range( start, end ) ];
-			}
-		}
-
-		return this._getTransformedByMove( sourcePosition, targetPosition, howMany );
+		return this._getTransformedByMove( sourcePosition, targetPosition, howMany, spread );
 	}
 
 	_getTransformedBySplitOperation( operation ) {
@@ -640,18 +600,43 @@ export default class Range {
 	 * @param {module:engine/model/position~Position} sourcePosition Position from which nodes are moved.
 	 * @param {module:engine/model/position~Position} targetPosition Position to where nodes are moved.
 	 * @param {Number} howMany How many nodes are moved.
+	 * @param {Boolean} [spread=false]
 	 * @returns {Array.<module:engine/model/range~Range>} Result of the transformation.
 	 */
-	_getTransformedByMove( sourcePosition, targetPosition, howMany ) {
+	_getTransformedByMove( sourcePosition, targetPosition, howMany, spread = false ) {
+		// Special case for transforming a collapsed range. Just transform it like a position.
 		if ( this.isCollapsed ) {
 			const newPos = this.start._getTransformedByMove( sourcePosition, targetPosition, howMany );
 
 			return [ new Range( newPos ) ];
 		}
 
-		let result;
+		// Special case for transformation when a part of the range is moved towards the range.
+		//
+		// Examples:
+		//
+		// <div><p>ab</p><p>c[d</p></div><p>e]f</p> --> <div><p>ab</p></div><p>c[d</p><p>e]f</p>
+		// <p>e[f</p><div><p>a]b</p><p>cd</p></div> --> <p>e[f</p><p>a]b</p><div><p>cd</p></div>
+		//
+		// Without this special condition, the default algorithm leaves an "artifact" range from one of `differenceSet` parts:
+		//
+		// <div><p>ab</p><p>c[d</p></div><p>e]f</p> --> <div><p>ab</p>{</div>}<p>c[d</p><p>e]f</p>
+		//
+		// This special case is applied only if the range is to be kept together (not spread).
+		const moveRange = Range.createFromPositionAndShift( sourcePosition, howMany );
+		const insertPosition = targetPosition._getTransformedByDeletion( sourcePosition, howMany );
 
-		const moveRange = new Range( sourcePosition, sourcePosition.getShiftedBy( howMany ) );
+		if ( this.containsPosition( targetPosition ) && !spread ) {
+			if ( moveRange.containsPosition( this.start ) || moveRange.containsPosition( this.end ) ) {
+				const start = this.start._getTransformedByMove( sourcePosition, targetPosition, howMany );
+				const end = this.end._getTransformedByMove( sourcePosition, targetPosition, howMany );
+
+				return [ new Range( start, end ) ];
+			}
+		}
+
+		// Default algorithm.
+		let result;
 
 		const differenceSet = this.getDifference( moveRange );
 		let difference = null;
@@ -659,7 +644,7 @@ export default class Range {
 		const common = this.getIntersection( moveRange );
 
 		if ( differenceSet.length == 1 ) {
-			// `moveRange` and this range may intersect.
+			// `moveRange` and this range may intersect but may be separate.
 			difference = new Range(
 				differenceSet[ 0 ].start._getTransformedByDeletion( sourcePosition, howMany ),
 				differenceSet[ 0 ].end._getTransformedByDeletion( sourcePosition, howMany )
@@ -672,22 +657,47 @@ export default class Range {
 			);
 		} // else, `moveRange` contains this range.
 
-		const insertPosition = targetPosition._getTransformedByDeletion( sourcePosition, howMany );
-
 		if ( difference ) {
-			result = difference._getTransformedByInsertion( insertPosition, howMany, common !== null );
+			result = difference._getTransformedByInsertion( insertPosition, howMany, common !== null || spread );
 		} else {
 			result = [];
 		}
 
 		if ( common ) {
-			result.push( new Range(
+			const transformedCommon = new Range(
 				common.start._getCombined( moveRange.start, insertPosition ),
 				common.end._getCombined( moveRange.start, insertPosition )
-			) );
+			);
+
+			if ( result.length == 2 ) {
+				result.splice( 1, 0, transformedCommon );
+			} else if ( result.length > 0 && common.start.isBefore( result[ 0 ].start ) ) {
+				result.unshift( transformedCommon );
+			} else {
+				result.push( transformedCommon );
+			}
 		}
 
 		return result;
+	}
+
+	_getTransformedByDeletion( deletePosition, howMany ) {
+		let newStart = this.start._getTransformedByDeletion( deletePosition, howMany );
+		let newEnd = this.start._getTransformedByDeletion( deletePosition, howMany );
+
+		if ( newStart == null && newEnd == null ) {
+			return null;
+		}
+
+		if ( newStart == null ) {
+			newStart = deletePosition;
+		}
+
+		if ( newEnd == null ) {
+			newEnd = deletePosition;
+		}
+
+		return new Range( newStart, newEnd );
 	}
 
 	/**

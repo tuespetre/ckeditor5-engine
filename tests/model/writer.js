@@ -1007,7 +1007,7 @@ describe( 'Writer', () => {
 					);
 
 					setAttribute( 'a', 1, range );
-					expect( spy.callCount ).to.equal( 1 );
+					expect( spy.callCount ).to.equal( 2 );
 					expect( getChangesAttrsCount() ).to.equal( 4 );
 					expect( getCompressedAttrs() ).to.equal( '111---111222---1112-1111-' );
 				} );
@@ -1029,11 +1029,11 @@ describe( 'Writer', () => {
 					expect( getCompressedAttrs() ).to.equal( '111---111222---1112------' );
 				} );
 
-				it( 'should create a proper operations for the mixed range', () => {
+				it( 'should not change children of items in the range', () => {
 					setAttribute( 'a', 1, getRange( 0, 20 ) );
 					expect( spy.callCount ).to.equal( 5 );
 					expect( getChangesAttrsCount() ).to.equal( 14 );
-					expect( getCompressedAttrs() ).to.equal( '11111111111111111111111--' );
+					expect( getCompressedAttrs() ).to.equal( '1111111111111111111---1--' );
 				} );
 
 				it( 'should throw when trying to use detached writer', () => {
@@ -1097,13 +1097,6 @@ describe( 'Writer', () => {
 					expect( spy.callCount ).to.equal( 0 );
 					expect( getChangesAttrsCount() ).to.equal( 0 );
 					expect( getCompressedAttrs() ).to.equal( '111---111222---1112------' );
-				} );
-
-				it( 'should not apply operation twice in the range contains opening and closing tags', () => {
-					removeAttribute( 'a', getRange( 18, 22 ) );
-					expect( spy.callCount ).to.equal( 1 );
-					expect( getChangesAttrsCount() ).to.equal( 1 );
-					expect( getCompressedAttrs() ).to.equal( '111---111222---111-------' );
 				} );
 
 				it( 'should not create an operation if range is collapsed', () => {

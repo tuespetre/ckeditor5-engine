@@ -53,7 +53,7 @@ const transform = {
 	 * @returns {Array.<module:engine/model/delta/delta~Delta>} Result of the transformation.
 	 */
 	transform( a, b, context ) {
-		const transformAlgorithm = transform.getTransformationCase( a, b ) || transform.defaultTransform;
+		const transformAlgorithm = transform.defaultTransform;
 
 		// Make new instance of context object, so all changes done during transformation are not saved in original object.
 		const transformed = transformAlgorithm( a, b, Object.assign( {}, context ) );

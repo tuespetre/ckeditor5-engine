@@ -169,16 +169,18 @@ describe( 'Differ', () => {
 		it( 'node in a element with changed attribute', () => {
 			const text = new Text( 'xyz', { bold: true } );
 			const position = new Position( root, [ 0, 3 ] );
-			const range = Range.createFromParentsAndOffsets( root, 0, root.getChild( 0 ), 0 );
+			const range = Range.createFromParentsAndOffsets( root, 0, root, 1 );
 
 			model.change( () => {
 				insert( text, position );
 				attribute( range, 'align', null, 'center' );
 
+				const diffRange = Range.createFromParentsAndOffsets( root, 0, root.getChild( 0 ), 0 );
+
 				// Compare to scenario above, this time there is only an attribute change on parent element,
 				// so there is also a diff for text.
 				expectChanges( [
-					{ type: 'attribute', range, attributeKey: 'align', attributeOldValue: null, attributeNewValue: 'center' },
+					{ type: 'attribute', range: diffRange, attributeKey: 'align', attributeOldValue: null, attributeNewValue: 'center' },
 					{ type: 'insert', name: '$text', length: 3, position },
 				] );
 			} );
@@ -697,19 +699,21 @@ describe( 'Differ', () => {
 		const attributeNewValue = 'foo';
 
 		it( 'on an element', () => {
-			const range = Range.createFromParentsAndOffsets( root, 0, root.getChild( 0 ), 0 );
+			const range = Range.createFromParentsAndOffsets( root, 0, root, 1 );
 
 			model.change( () => {
 				attribute( range, attributeKey, attributeOldValue, attributeNewValue );
 
+				const diffRange = Range.createFromParentsAndOffsets( root, 0, root.getChild( 0 ), 0 );
+
 				expectChanges( [
-					{ type: 'attribute', range, attributeKey, attributeOldValue, attributeNewValue }
+					{ type: 'attribute', range: diffRange, attributeKey, attributeOldValue, attributeNewValue }
 				] );
 			} );
 		} );
 
 		it( 'on an element - only one of many attributes changes', () => {
-			const range = Range.createFromParentsAndOffsets( root, 0, root.getChild( 0 ), 0 );
+			const range = Range.createFromParentsAndOffsets( root, 0, root, 1 );
 
 			model.change( () => {
 				// Set an attribute on an element. It won't change afterwards.
@@ -719,8 +723,10 @@ describe( 'Differ', () => {
 			model.change( () => {
 				attribute( range, attributeKey, attributeOldValue, attributeNewValue );
 
+				const diffRange = Range.createFromParentsAndOffsets( root, 0, root.getChild( 0 ), 0 );
+
 				expectChanges( [
-					{ type: 'attribute', range, attributeKey, attributeOldValue, attributeNewValue }
+					{ type: 'attribute', range: diffRange, attributeKey, attributeOldValue, attributeNewValue }
 				] );
 			} );
 		} );
@@ -955,21 +961,7 @@ describe( 'Differ', () => {
 					},
 					{
 						type,
-						range: Range.createFromParentsAndOffsets( p1, 0, p1, 3 ),
-						attributeKey,
-						attributeOldValue,
-						attributeNewValue
-					},
-					{
-						type,
 						range: Range.createFromParentsAndOffsets( root, 1, p2, 0 ),
-						attributeKey,
-						attributeOldValue,
-						attributeNewValue
-					},
-					{
-						type,
-						range: Range.createFromParentsAndOffsets( p2, 0, p2, 3 ),
 						attributeKey,
 						attributeOldValue,
 						attributeNewValue

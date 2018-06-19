@@ -1040,7 +1040,7 @@ describe( 'DocumentSelection', () => {
 				const range = selection.getFirstRange();
 
 				expect( range.start.path ).to.deep.equal( [ 0, 2 ] );
-				expect( range.end.path ).to.deep.equal( [ 5 ] );
+				expect( range.end.path ).to.deep.equal( [ 1, 3 ] );
 				expect( spyRange.calledOnce ).to.be.true;
 			} );
 

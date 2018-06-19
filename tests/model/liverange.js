@@ -310,7 +310,7 @@ describe( 'LiveRange', () => {
 				} );
 
 				expect( live.start.path ).to.deep.equal( [ 0, 1, 4 ] );
-				expect( live.end.path ).to.deep.equal( [ 0, 4, 2 ] );
+				expect( live.end.path ).to.deep.equal( [ 0, 2, 0 ] );
 				expect( spy.calledOnce ).to.be.true;
 			} );
 
@@ -352,7 +352,7 @@ describe( 'LiveRange', () => {
 				} );
 
 				expect( live.start.path ).to.deep.equal( [ 0, 1, 4 ] );
-				expect( live.end.path ).to.deep.equal( [ 0, 4, 1 ] ); // Included some nodes.
+				expect( live.end.path ).to.deep.equal( [ 0, 2, 1 ] );
 				expect( spy.calledOnce ).to.be.true;
 			} );
 

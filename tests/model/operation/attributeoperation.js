@@ -283,46 +283,6 @@ describe( 'AttributeOperation', () => {
 		expect( count( root.getChild( 0 ).getAttributes() ) ).to.equal( 0 );
 	} );
 
-	it( 'should not set attribute of element if change range starts in the middle of that element', () => {
-		const eleA = new Element( 'a', [], new Text( 'abc' ) );
-		const eleB = new Element( 'b', [], new Text( 'xyz' ) );
-
-		root._insertChild( 0, [ eleA, eleB ] );
-
-		model.applyOperation( wrapInDelta(
-			new AttributeOperation(
-				new Range( new Position( root, [ 0, 2 ] ), new Position( root, [ 1, 2 ] ) ),
-				'foo',
-				null,
-				true,
-				doc.version
-			)
-		) );
-
-		expect( root.getChild( 0 ).hasAttribute( 'foo' ) ).to.be.false;
-	} );
-
-	it( 'should not remove attribute of element if change range starts in the middle of that element', () => {
-		const fooAttr = { foo: true };
-
-		const eleA = new Element( 'a', fooAttr, new Text( 'abc' ) );
-		const eleB = new Element( 'b', fooAttr, new Text( 'xyz' ) );
-
-		root._insertChild( 0, [ eleA, eleB ] );
-
-		model.applyOperation( wrapInDelta(
-			new AttributeOperation(
-				new Range( new Position( root, [ 0, 3 ] ), new Position( root, [ 1, 0 ] ) ),
-				'foo',
-				true,
-				null,
-				doc.version
-			)
-		) );
-
-		expect( root.getChild( 0 ).hasAttribute( 'foo' ) ).to.be.true;
-	} );
-
 	it( 'should undo changing attribute by applying reverse operation', () => {
 		root._insertChild( 0, new Text( 'bar', { isNew: false } ) );
 

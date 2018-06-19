@@ -848,8 +848,8 @@ describe( 'Range', () => {
 				const transformed = range.getTransformedByDelta( delta );
 
 				expectRange( transformed[ 0 ], 2, 4 );
-				expectRange( transformed[ 1 ], 5, 6 );
-				expectRange( transformed[ 2 ], 4, 5 );
+				expectRange( transformed[ 1 ], 4, 5 );
+				expectRange( transformed[ 2 ], 5, 6 );
 			} );
 
 			// #877.
@@ -859,6 +859,8 @@ describe( 'Range', () => {
 				// Expected state after moving `<p>` out of `<w>`:
 				// <w><p>abc</p></w><p>x[x</p><p>d]ef</p>
 
+				// <w><p>abc</p>{</w>}<p>x[x</p><p>d]ef</p>
+
 				const range = new Range( new Position( root, [ 0, 1, 1 ] ), new Position( root, [ 1, 1 ] ) );
 				const delta = getMoveDelta( new Position( root, [ 0, 1 ] ), 1, new Position( root, [ 1 ] ), 1 );
 
@@ -866,22 +868,6 @@ describe( 'Range', () => {
 
 				expect( transformed.length ).to.equal( 1 );
 				expect( transformed[ 0 ].start.path ).to.deep.equal( [ 1, 1 ] );
-				expect( transformed[ 0 ].end.path ).to.deep.equal( [ 2, 1 ] );
-			} );
-
-			it( 'moved element contains range start and is moved out of range', () => {
-				// Initial state:
-				// <p>abc</p><p>x[x</p><p>d]ef</p>
-				// Expected state after moving:
-				// <p>x[x</p><p>abc</p><p>d]ef</p>
-
-				const range = new Range( new Position( root, [ 1, 1 ] ), new Position( root, [ 2, 1 ] ) );
-				const delta = getMoveDelta( new Position( root, [ 1 ] ), 1, new Position( root, [ 0 ] ), 1 );
-
-				const transformed = range.getTransformedByDelta( delta );
-
-				expect( transformed.length ).to.equal( 1 );
-				expect( transformed[ 0 ].start.path ).to.deep.equal( [ 0, 1 ] );
 				expect( transformed[ 0 ].end.path ).to.deep.equal( [ 2, 1 ] );
 			} );
 
@@ -899,22 +885,6 @@ describe( 'Range', () => {
 				expect( transformed.length ).to.equal( 1 );
 				expect( transformed[ 0 ].start.path ).to.deep.equal( [ 0, 1 ] );
 				expect( transformed[ 0 ].end.path ).to.deep.equal( [ 1, 1 ] );
-			} );
-
-			it( 'moved element contains range end and is moved out of range', () => {
-				// Initial state:
-				// <p>a[bc</p><p>x]x</p><p>def</p>
-				// Expected state after moving:
-				// <p>a[bc</p><p>def</p><p>x]x</p>
-
-				const range = new Range( new Position( root, [ 0, 1 ] ), new Position( root, [ 1, 1 ] ) );
-				const delta = getMoveDelta( new Position( root, [ 1 ] ), 1, new Position( root, [ 3 ] ), 1 );
-
-				const transformed = range.getTransformedByDelta( delta );
-
-				expect( transformed.length ).to.equal( 1 );
-				expect( transformed[ 0 ].start.path ).to.deep.equal( [ 0, 1 ] );
-				expect( transformed[ 0 ].end.path ).to.deep.equal( [ 2, 1 ] );
 			} );
 
 			// #1358
