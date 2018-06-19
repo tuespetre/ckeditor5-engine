@@ -516,10 +516,19 @@ setTransformation( MergeOperation, MergeOperation, ( a, b ) => {
 } );
 
 setTransformation( MergeOperation, MoveOperation, ( a, b ) => {
-	// remove special case -- if right-side merge was removed, dont bring it back
-	// if ( b instanceof RemoveOperation && b.containsPosition( a.sourcePosition ) ) {
+	// Case 1:	The element to merge got removed.
+	//			Merge operation does support merging elements which are not siblings. So it would not be a problem
+	//			from technical point of view. However, if the element was removed, the intention of the user
+	//			deleting it was to have it all deleted. From user experience point of view, moving back the
+	//			removed nodes might be unexpected. This means that in this scenario we will block the merging.
 	//
-	// }
+	const removedRange = Range.createFromPositionAndShift( b.sourcePosition, b.howMany );
+
+	if ( b instanceof RemoveOperation ) {
+		if ( _onSameLevel( a.deletionPosition, b.sourcePosition ) && removedRange.containsPosition( a.sourcePosition ) ) {
+			return getNoOp();
+		}
+	}
 
 	a.sourcePosition = a.sourcePosition._getTransformedByMoveOperation( b );
 	a.targetPosition = a.targetPosition._getTransformedByMoveOperation( b );
@@ -542,7 +551,15 @@ setTransformation( MergeOperation, WrapOperation, ( a, b ) => {
 } );
 
 setTransformation( MergeOperation, UnwrapOperation, ( a, b ) => {
-	// shouldnt be possible to merge unwrapped element or to unwrapped element?
+	// Case 1:	The element to merge to unwrapped.
+	//			There are multiple possible solution to resolve this conflict:
+	//			 * unwrap also merge target (all nodes are unwrapped),
+	//			 * move the unwrapped nodes to the merge target (no nodes stayed unwrapped),
+	//			 * cancel the merge (some nodes are unwrapped and some are not).
+	//
+	if ( a.sourcePosition.isEqual( b.position ) ) {
+		return getNoOp();
+	}
 
 	a.sourcePosition = a.sourcePosition._getTransformedByUnwrapOperation( b );
 	a.targetPosition = a.targetPosition._getTransformedByUnwrapOperation( b );
@@ -1075,12 +1092,6 @@ setTransformation( RootAttributeOperation, RootAttributeOperation, ( a, b, conte
 
 // -----------------------
 
-setTransformation( SplitOperation, AttributeOperation, ( a, b ) => {
-	// if last element from attribute range is split, include it in attribute change
-	// mirror case 2?
-	return [ a ];
-} );
-
 setTransformation( SplitOperation, InsertOperation, ( a, b ) => {
 	a.position = a.position._getTransformedByInsertOperation( b );
 
@@ -1124,11 +1135,6 @@ setTransformation( SplitOperation, MoveOperation, ( a, b ) => {
 	return [ a ];
 } );
 
-setTransformation( SplitOperation, RenameOperation, ( a, b ) => {
-	// mirror case
-	return [ a ];
-} );
-
 setTransformation( SplitOperation, SplitOperation, ( a, b ) => {
 	a.position = a.position._getTransformedBySplitOperation( b );
 
@@ -1136,8 +1142,13 @@ setTransformation( SplitOperation, SplitOperation, ( a, b ) => {
 } );
 
 setTransformation( SplitOperation, WrapOperation, ( a, b ) => {
-	// cancel split if nodes got wrapped
-	// if last element from wrap range is split, include it in wrap
+	// Case 1:	If split position has been wrapped, reverse the wrapping so that split can be applied as intended.
+	//			This is an edge case scenario where it is difficult to find a correct solution.
+	//			Since it will be a rare (or only theoretical) scenario, the algorithm will perform the easy solution.
+	//
+	if ( b.wrappedRange.containsPosition( a.position ) ) {
+		return [ b.getReversed(), a ];
+	}
 
 	a.position = a.position._getTransformedByWrapOperation( b );
 
@@ -1145,7 +1156,11 @@ setTransformation( SplitOperation, WrapOperation, ( a, b ) => {
 } );
 
 setTransformation( SplitOperation, UnwrapOperation, ( a, b ) => {
-	// cancel split if element got unwrapped
+	// Case 1:	If the element to split got unwrapped, cancel the split as there is nothing to split anymore.
+	//
+	if ( b.unwrappedRange.containsPosition( a.position ) ) {
+		return getNoOp();
+	}
 
 	a.position = a.position._getTransformedByUnwrapOperation( b );
 
@@ -1210,8 +1225,22 @@ setTransformation( WrapOperation, MoveOperation, ( a, b ) => {
 } );
 
 setTransformation( WrapOperation, SplitOperation, ( a, b ) => {
-	// cancel split if nodes got wrapped
-	// if last element from wrap range is split, include it in wrap
+	// Case 1:	If range to wrap got split by split operation cancel the wrapping.
+	//
+	if ( a.wrappedRange.containsPosition( b.position ) ) {
+		return getNoOp();
+	}
+
+	// Case 2:	If last element from range to wrap has been split, include the newly created element in the wrap range.
+	//
+	if ( b.insertionPosition.isEqual( a.wrappedRange.end ) ) {
+		a.howMany++;
+
+		return [ a ];
+	}
+
+	// The default case.
+	//
 	const transformed = a.wrappedRange._getTransformedBySplitOperation( b );
 
 	a.position = transformed.start;
@@ -1332,7 +1361,16 @@ setTransformation( UnwrapOperation, InsertOperation, ( a, b ) => {
 } );
 
 setTransformation( UnwrapOperation, MergeOperation, ( a, b ) => {
-	// what if node to unwrap got merged
+	// Case 1:	The element to unwrap got merged.
+	//			There are multiple possible solution to resolve this conflict:
+	//			 * unwrap the merge target element (all nodes are unwrapped),
+	//			 * cancel the unwrap (no nodes stayed unwrapped),
+	//			 * reverse the merge and apply the original unwrap (some nodes are unwrapped and some are not).
+	//
+	if ( a.position.isEqual( b.sourcePosition ) ) {
+		return [ b.getReversed(), a ];
+	}
+
 	const transformed = a.unwrappedRange._getTransformedByMergeOperation( b );
 
 	a.position = transformed.start;
@@ -1364,7 +1402,12 @@ setTransformation( UnwrapOperation, MoveOperation, ( a, b ) => {
 } );
 
 setTransformation( UnwrapOperation, SplitOperation, ( a, b ) => {
-	// cancel split if nodes got unwrapped or unwrap both
+	// Case 1:	The element to unwrap got split, so now there are two elements to unwrap.
+	//			This can be solved either by providing two unwrap operations or by reversing the split and applying the original unwrap.
+	//
+	if ( a.unwrappedRange.containsPosition( b.position ) ) {
+		return [ b.getReversed(), a ];
+	}
 	const transformed = a.unwrappedRange._getTransformedBySplitOperation( b );
 
 	a.position = transformed.start;
