@@ -501,15 +501,14 @@ setTransformation( MergeOperation, InsertOperation, ( a, b ) => {
 	return [ a ];
 } );
 
-setTransformation( MergeOperation, MergeOperation, ( a, b ) => {
-	// same merge source and target position -- no op
-	// same merge source position different target position special case -- only one merge applies use is strong
+setTransformation( MergeOperation, MergeOperation, ( a, b, context ) => {
+	if ( a.sourcePosition.isEqual( b.sourcePosition ) ) {
+		if ( !context.isStrong || a.targetPosition.isEqual( b.targetPosition ) ) {
+			return getNoOp();
+		}
+	}
+
 	a.sourcePosition = a.sourcePosition._getTransformedByMergeOperation( b );
-
-	// if ( a.sourcePosition.isEqual( b.sourcePosition ) && !a.targetPosition.isEqual( b.targetPosition ) ) {
-	//
-	// }
-
 	a.targetPosition = a.targetPosition._getTransformedByMergeOperation( b );
 
 	return [ a ];
